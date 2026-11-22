@@ -1,0 +1,7 @@
+# Security architecture
+
+Phase 1 exposes read-only application routes. The overview reports connectivity, and the Kindle page shows server time and a test image. The default listener is loopback. LAN testing is opt-in through a specific private interface on Dashboard NAS. Keep the application off public networks. Store real secrets in an ignored, owner-readable configuration file or a future secret store.
+
+Before administrative writes are added, implement dedicated administrator authentication with a modern password hash and server-side authorization on every mutation. Use expiring sessions with HttpOnly, Secure, SameSite cookies over trusted HTTPS, CSRF protection for browser mutations, and session revocation. Keep session secrets independently rotatable. Do not share administrator cookies with Kindle devices.
+
+A future administrator enrolls a Kindle through an expiring pairing flow. Issue revocable, device-specific credentials with narrowly scoped permissions. Store a hash of opaque device credentials server-side. Authorize reads for the paired display and allow only explicit timer and display actions. Prevent credential disclosure in URLs and logs. Design form submissions with replay and CSRF protections appropriate to the credential transport. Confirm TLS and cookie support on the actual Kindle before choosing its transport. If the browser prevents secure authenticated use, defer device control until a suitable client or trusted isolated deployment is available.

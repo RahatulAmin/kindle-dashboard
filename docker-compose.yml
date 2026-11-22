@@ -1,0 +1,50 @@
+name: kindle-dashboard
+services:
+  app:
+    image: kindle-dashboard:phase1
+    build: .
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    network_mode: host
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_HOST: "${APP_HOST:-127.0.0.1}"
+      APP_PORT: "${APP_PORT:-8765}"
+      PERSISTENT_DATA_DIR: "${PERSISTENT_DATA_DIR:-/srv/kindle-dashboard/data}"
+      DATABASE_PATH: "${DATABASE_PATH:-${PERSISTENT_DATA_DIR:-/srv/kindle-dashboard/data}/db/dashboard.sqlite3}"
+      LOG_DIR: "${LOG_DIR:-/srv/kindle-dashboard/logs}"
+      LOG_DESTINATION: file
+    volumes:
+      - type: bind
+        source: "${PERSISTENT_DATA_DIR:-/srv/kindle-dashboard/data}"
+        target: "${PERSISTENT_DATA_DIR:-/srv/kindle-dashboard/data}"
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${LOG_DIR:-/srv/kindle-dashboard/logs}"
+        target: "${LOG_DIR:-/srv/kindle-dashboard/logs}"
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: none
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          from os import environ; from urllib.request import ProxyHandler, build_opener;
+          build_opener(ProxyHandler({})).open('http://' + environ['APP_HOST'] + ':' +
+          environ['APP_PORT'] + '/api/v1/health', timeout=3).close()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kindle Dashboard Test Display</title>
+  <style>
+    body { margin: 0; background: white; color: black; }
+    img { display: block; width: 100%; max-width: {{ settings.kindle_width }}px; height: auto; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <img src="{{ url_for('kindle_image').path }}" width="{{ settings.kindle_width }}"
+       height="{{ settings.kindle_height }}" alt="Kindle Dashboard test display with server date and time">
+</body>
+</html>

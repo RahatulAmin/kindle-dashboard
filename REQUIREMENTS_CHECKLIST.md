@@ -1,0 +1,35 @@
+# Requirements checklist
+
+Statuses are **Planned**, **Implemented**, **Tested**, **Blocked**, and **Not applicable**. Where a row mixes outcomes, each outcome is labeled separately.
+
+## Phase 1
+
+| Requirement | Status |
+| --- | --- |
+| Existing Git checkout, NAS and Python inspection, Docker/Compose and data root inspection, TCP 8765 check, writable ext4 mount, storage risk assessment | Tested |
+| Source on the data volume, project-local tools and caches, separate application layers, no changes to existing services or Docker configuration | Implemented |
+| Python 3.12, FastAPI, SQLAlchemy, Pydantic, SQLite, Alembic, Pillow and pinned dependencies | Tested |
+| Environment configuration, structured logs, response schemas and errors, versioned API, startup migration and graceful teardown | Tested for configuration, startup, teardown, health and HTTP errors. Rotating file logs implemented. |
+| SQLite path configuration, session management, baseline version, no domain tables, idempotent startup | Tested |
+| Backup, restore and migration procedures, shared model metadata for future entities | Implemented |
+| React/TypeScript/Vite/Tailwind, responsive admin shell, Overview and six navigable empty states, live backend connectivity | Tested with TypeScript, Vite, built static assets and Firefox at desktop and mobile widths. |
+| Kindle HTML, no JavaScript, configurable dimensions, 758 × 1024 default grayscale PNG with title and server date/time, widget render seam | Tested at HTTP, PNG and modern Firefox levels |
+| Toronto timezone, Celsius, English, port 8765, default loopback, 60-second dashboard, 30-second Pomodoro, 600-second photo rotation, 300-second idle, reserved authentication settings | Implemented. Display intervals are reserved for later phases. |
+| Single multi-stage Compose container, Python-only runtime, non-root, restart policy, health probe, no privileged access or Docker socket, mount paths for data and media | Implemented. Compose configuration tested. |
+| Container image build, runtime ownership and live Docker health probe | Blocked by system partition space |
+| Administrator/device authentication design, no write endpoints, secret exclusions and local exposure policy | Implemented |
+| Backend automated tests, TypeScript check, Vite build, static frontend integration and Compose validation | Tested |
+| Production domain tables, login, device enrollment and physical-device modification | Not applicable to Phase 1 |
+| README, compatibility notes, phase plan and status checklist | Implemented |
+
+## Later phases
+
+| Phase | Requirements | Status |
+| --- | --- | --- |
+| 2 | Administrator login and protected changes, user/settings records, date/time, weather/Celsius, to-dos, deadlines/countdown, optional NAS status, notes/reminders, weather and widget settings | Planned |
+| 3 | Server-authoritative persistent timer, sessions and progress, 25/5/15 defaults, configurable durations, Start/Pause/Resume/Reset/Skip, admin controls and one-second updates | Planned |
+| 4 | Display settings and mode selection, grayscale widget rendering, admin preview, 30-second Kindle Pomodoro refresh and authorized touchscreen forms | Planned |
+| 5 | Photo and album management, uploaded originals, optimized cache, grayscale rendering, 300-second idle and 600-second rotation defaults, configurable intervals, sequential/shuffled rotation, touchscreen return and timer-aware idle suppression | Planned |
+| 6 | Registered display records, device management, scoped access, synchronization and mode integration | Planned |
+| 7 | Deployment hardening and complete system testing, including container runtime and recovery tests | Planned |
+| 8 | PW2 browser, refresh, continuous awake, sleep/reconnect, touch forms, TLS/cookies and optional native-client feasibility | Planned |
