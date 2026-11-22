@@ -6,12 +6,18 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
+from app.api.kindle_diagnostic import router as diagnostic_router
+from app.api.kindle_display import router as display_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.health import router as health_router
 from app.core.config import ROOT, Settings
 from app.core.logging import configure_logging, logger
 from app.db.database import Database
 from app.rendering.kindle import router as kindle_router
 from app.schemas.api import APIError, ErrorResponse
+from app.services.auth import LoginLimiter
+from app.services.weather import WeatherCache
 
 
 def error_response(status: int, code: str, message: str, headers=None) -> JSONResponse:
@@ -43,8 +49,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Kindle Dashboard", lifespan=lifespan)
     app.state.settings = settings
+    app.state.login_limiter = LoginLimiter()
+    app.state.weather = WeatherCache()
+    app.state.kindle_diagnostic_last_press = None
     app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(dashboard_router)
     app.include_router(kindle_router)
+    app.include_router(display_router)
+    app.include_router(diagnostic_router)
 
     @app.exception_handler(HTTPException)
     async def handle_http_error(_request: Request, exc: HTTPException):

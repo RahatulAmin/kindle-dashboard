@@ -1,52 +1,44 @@
-import { useEffect, useState } from 'react'
-import { readHealth, type Connection } from '../services/health'
-
-const statuses = {
-  checking: ['Checking connection', 'Waiting for a response from Dashboard NAS.'],
-  connected: ['Connected', 'The backend and SQLite database are available.'],
-  degraded: ['Database unavailable', 'The backend responded. Check its database connection.'],
-  unreachable: ['Backend unavailable', 'The health endpoint could not be reached or returned an unexpected response.'],
-} satisfies Record<Connection, [string, string]>
+import { useResource, type Weather } from '../services/admin'
 
 export function Overview() {
-  const [connection, setConnection] = useState<Connection>('checking')
-  const [attempt, setAttempt] = useState(0)
+  const counts = useResource<{ open_tasks: number; active_deadlines: number }>('overview')
+  const forecast = useResource<Weather>('weather')
+  const health = useResource<{ status: string; database: string }>('health')
+  const weather = forecast.data?.weather
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let stopped = false
-    const timeout = window.setTimeout(() => controller.abort(), 5000)
-    readHealth(controller.signal)
-      .then(status => { if (!stopped) setConnection(status) })
-      .catch(() => { if (!stopped) setConnection('unreachable') })
-      .finally(() => window.clearTimeout(timeout))
-    return () => {
-      stopped = true
-      window.clearTimeout(timeout)
-      controller.abort()
-    }
-  }, [attempt])
-
-  const [status, description] = statuses[connection]
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-tight">Overview</h1>
-      <div className="mt-7 grid gap-4 lg:grid-cols-2">
+      <h1 className="page-title">Overview</h1>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <section className="panel">
-          <h2 className="text-lg font-semibold">Backend connection</h2>
-          <div role="status" className="mt-4">
-            <p className="font-semibold text-teal-800">{status}</p>
-            <p className="mt-1 text-slate-600">{description}</p>
-          </div>
-          <button type="button" className="action mt-5" disabled={connection === 'checking'} onClick={() => {
-            setConnection('checking')
-            setAttempt(value => value + 1)
-          }}>Check again</button>
+          <h2 className="text-xl font-semibold">Productivity</h2>
+          {counts.loading && <p role="status" className="mt-3">Loading dashboard data…</p>}
+          {counts.error && <p role="alert" className="error mt-3">{counts.error} <button className="underline" onClick={counts.reload}>Retry</button></p>}
+          {counts.data && <ul className="mt-3 space-y-2">
+            <li><a className="underline" href="#/tasks">{counts.data.open_tasks} open tasks</a></li>
+            <li><a className="underline" href="#/deadlines">{counts.data.active_deadlines} active deadlines</a></li>
+          </ul>}
         </section>
         <section className="panel">
-          <h2 className="text-lg font-semibold">Kindle test display</h2>
-          <p className="mt-4 text-slate-600">Preview a grayscale image with the current server date and time.</p>
-          <a className="action mt-5 inline-block" href="/kindle">Open test display</a>
+          <h2 className="text-xl font-semibold">Weather</h2>
+          {forecast.loading && <p role="status" className="mt-3">Checking Open-Meteo…</p>}
+          {forecast.error && <p role="alert" className="error mt-3">{forecast.error} <button className="underline" onClick={forecast.reload}>Retry</button></p>}
+          {forecast.data && <p className="mt-3 font-medium">{forecast.data.location}</p>}
+          {weather?.status === 'unavailable' && <p className="mt-1">Weather is unavailable. Check the location and internet connection.</p>}
+          {weather && weather.temperature !== null && <>
+            <p className="mt-1 text-2xl">{Math.round(weather.temperature)} °C · {weather.condition}</p>
+            <p className="mt-1">High {weather.high} °C · Low {weather.low} °C</p>
+            {weather.updated_at && <p className="mt-2 text-sm">Last updated {new Date(weather.updated_at).toLocaleString()}{weather.status === 'stale' && ' · Stale'}</p>}
+          </>}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button className="action" onClick={forecast.reload} disabled={forecast.loading}>Check weather</button>
+            <a className="text-sm underline" href="https://open-meteo.com/">Weather data by Open-Meteo</a>
+          </div>
+        </section>
+        <section className="panel">
+          <h2 className="text-xl font-semibold">Dashboard NAS connection</h2>
+          <p className="mt-3" role="status">{health.loading ? 'Checking connection…' : health.error ? 'Health check failed.' : 'Backend and SQLite are available.'}</p>
+          <button className="action mt-3" onClick={health.reload} disabled={health.loading}>Check again</button>
         </section>
       </div>
     </>

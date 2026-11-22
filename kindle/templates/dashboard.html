@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="{{ preferences.kindle_refresh_seconds }}">
+  <title>{{ preferences.dashboard_title }}</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: white; }
+    .display { position: absolute; top: 0; right: 0; bottom: 0; left: 0; text-align: center; }
+    img { display: block; margin: 0 auto; max-height: 100%; max-width: 100%; width: auto; height: auto; }
+  </style>
+</head>
+<body>
+  <div class="display">
+    <img src="{{ url_for('kindle_dashboard_image').path }}" alt="Kindle Dashboard">
+  </div>
+</body>
+</html>

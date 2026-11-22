@@ -8,11 +8,14 @@ export const pages = {
   photos: 'Photo Library',
   display: 'Display',
   settings: 'Settings',
+  widgets: 'Widgets',
 } as const
 
 export type Page = keyof typeof pages
 
-export function AdminShell({ page, children }: { page: Page; children: ReactNode }) {
+export function AdminShell({ page, children, account }: {
+  page: Page; children: ReactNode; account: ReactNode;
+}) {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[15rem_1fr]">
       <a href="#main" className="sr-only focus:not-sr-only">Skip to content</a>
@@ -32,6 +35,7 @@ export function AdminShell({ page, children }: { page: Page; children: ReactNode
             </a>
           ))}
         </nav>
+        {account}
       </aside>
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-5xl px-5 py-9 sm:px-10 md:py-14">
         {children}

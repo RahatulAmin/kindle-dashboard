@@ -23,3 +23,15 @@ PYTHONPATH=backend .venv/bin/python -m pytest backend/tests
 docker compose config --quiet
 docker compose --env-file .env.example config --quiet
 ```
+
+## Phase 2 verification
+
+| Check | Result |
+| --- | --- |
+| Backend pytest suite | 19 passed. Includes existing Kindle diagnostics, authentication and expiration, CSRF, login limits, task and deadline CRUD, widget persistence, weather parsing/cache/outage recovery, realistic Kindle rendering, and upgrade/restart recovery. |
+| TypeScript and Vite production build | Passed |
+| Headless Firefox | Passed for sign-in, task and deadline creation, widget ordering, settings and sharing, no horizontal overflow at phone width, full Kindle image fit, diagnostic access, and sign-out. |
+| Open-Meteo on Dashboard NAS | Live Montréal request returned current conditions and daily high and low. |
+| Alembic | A read-only SQLite backup of the NAS database upgraded from `0001` to `0002` and passed `PRAGMA integrity_check`. A fresh temporary database also upgraded and passed the metadata drift check. Live SQLite remains at `0001` until Phase 2 setup or startup. |
+| Compose configuration | Passed with defaults and `.env.example`. The shared Ubuntu partition still has 4.0 GB available, so the build and live container health check were deferred. |
+| Physical Kindle | The user confirmed screen fit, automatic 30-second refresh, HTML POST, and manual refresh on the diagnostic. The Phase 2 populated display was verified in Firefox and still needs a physical check. |

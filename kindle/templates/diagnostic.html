@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="30">
+  <title>Kindle Browser Test</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: white; color: black; font: 16px/1.25 sans-serif; text-align: center; }
+    h1 { font-size: 20px; margin: 0; padding: 8px 0; }
+    p { margin: 3px 0; }
+    form { display: inline-block; margin: 6px 2px 0; }
+    input { min-height: 48px; padding: 4px 10px; border: 2px solid black;
+            background: white; color: black; font: bold 16px sans-serif; }
+    .preview { position: absolute; top: 164px; right: 8px; bottom: 8px; left: 8px; }
+    .preview img { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+  </style>
+</head>
+<body>
+  <h1>Kindle Browser Test</h1>
+  <p>Server time <strong id="server-time">{{ server_time }}</strong></p>
+  <p>Last successful press <strong id="last-press">{{ last_press or "None yet" }}</strong></p>
+  <form method="post" action="{{ url_for('kindle_test_press').path }}">
+    <input type="submit" value="Test Touch">
+  </form>
+  <form method="get" action="{{ url_for('kindle_test').path }}">
+    <input type="submit" value="Refresh Now">
+  </form>
+  <div class="preview">
+    <img src="{{ url_for('kindle_image').path }}" alt="Kindle Dashboard grayscale test image">
+  </div>
+</body>
+</html>

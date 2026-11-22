@@ -41,10 +41,12 @@ def test_startup_migration_and_health(client, settings):
     assert response.json() == {"data": {"status": "ok", "database": "available"}}
     connection = sqlite3.connect(settings.sqlite_path)
     try:
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0001",)
-        assert connection.execute(
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0002",)
+        tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall() == [("alembic_version",)]
+        )}
+        assert {"alembic_version", "administrator", "administrator_session",
+                "dashboard_settings", "task", "deadline"} <= tables
     finally:
         connection.close()
 
@@ -100,3 +102,33 @@ def test_built_frontend(client):
     assert "<title>Kindle Dashboard</title>" in response.text
     for asset in (ROOT / "frontend/dist/assets").iterdir():
         assert client.get(f"/assets/{asset.name}").status_code == 200
+
+
+def test_kindle_diagnostic(client):
+    page = client.get("/kindle/test")
+    assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store"
+    assert 'http-equiv="refresh" content="30"' in page.text
+    assert 'id="server-time"' in page.text
+    assert 'id="last-press">None yet<' in page.text
+    assert '<form method="post" action="/kindle/test">' in page.text
+    assert '<form method="get" action="/kindle/test">' in page.text
+    assert 'src="/api/kindle/image.png"' in page.text
+    assert "<script" not in page.text
+
+    press = client.post("/kindle/test", follow_redirects=False)
+    assert press.status_code == 303
+    assert press.headers["location"] == "/kindle/test"
+
+    last_press = client.app.state.kindle_diagnostic_last_press
+    assert last_press
+    for _ in range(2):
+        assert f'id="last-press">{last_press}<' in client.get(press.headers["location"]).text
+
+    assert 'id="last-press"' not in client.get("/kindle").text
+
+
+def test_kindle_diagnostic_state_is_app_local(client, settings):
+    client.post("/kindle/test")
+    with TestClient(create_app(settings)) as other_client:
+        assert 'id="last-press">None yet<' in other_client.get("/kindle/test").text

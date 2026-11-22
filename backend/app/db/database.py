@@ -34,6 +34,7 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         config = Config(str(BACKEND / "alembic.ini"))
         with self.engine.begin() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
 

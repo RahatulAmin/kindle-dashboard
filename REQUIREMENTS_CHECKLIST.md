@@ -22,14 +22,28 @@ Statuses are **Planned**, **Implemented**, **Tested**, **Blocked**, and **Not ap
 | Production domain tables, login, device enrollment and physical-device modification | Not applicable to Phase 1 |
 | README, compatibility notes, phase plan and status checklist | Implemented |
 
+## Phase 2
+
+| Requirement | Status |
+| --- | --- |
+| Terminal-only administrator setup, scrypt, expiry/revocation, cookie policy, CSRF, authenticated data access and login throttling | Tested |
+| Task CRUD, manual ordering, timestamps, due date, priority, completion and Kindle visibility | Tested |
+| Deadline CRUD, archive/completion, Toronto calendar-day countdown and chronological order | Tested |
+| Open-Meteo current conditions, high/low, successful update time, 15-minute cache and outage fallback | Tested |
+| Persisted general settings and ordered widget visibility and limits | Tested |
+| Responsive Overview, Tasks, Deadlines, Display, Settings and Widgets with future Pomodoro and Photo Library placeholders | Implemented. TypeScript and production builds passed. |
+| Opt-in 758 × 1024 server-side Kindle dashboard with bounded text, widget ordering, and isolated diagnostic | Tested at HTTP and PNG levels. Updated dashboard pending physical verification. |
+| Alembic 0001 → 0002, existing-row preservation and restart recovery | Tested against temporary databases |
+| Docker build and runtime on Dashboard NAS | Blocked by Ubuntu partition space |
+
 ## Later phases
 
 | Phase | Requirements | Status |
 | --- | --- | --- |
-| 2 | Administrator login and protected changes, user/settings records, date/time, weather/Celsius, to-dos, deadlines/countdown, optional NAS status, notes/reminders, weather and widget settings | Planned |
 | 3 | Server-authoritative persistent timer, sessions and progress, 25/5/15 defaults, configurable durations, Start/Pause/Resume/Reset/Skip, admin controls and one-second updates | Planned |
-| 4 | Display settings and mode selection, grayscale widget rendering, admin preview, 30-second Kindle Pomodoro refresh and authorized touchscreen forms | Planned |
+| 4 | Mode selection, extended grayscale widgets and preview, 30-second Kindle Pomodoro refresh, and authorized touchscreen forms | Planned |
 | 5 | Photo and album management, uploaded originals, optimized cache, grayscale rendering, 300-second idle and 600-second rotation defaults, configurable intervals, sequential/shuffled rotation, touchscreen return and timer-aware idle suppression | Planned |
 | 6 | Registered display records, device management, scoped access, synchronization and mode integration | Planned |
 | 7 | Deployment hardening and complete system testing, including container runtime and recovery tests | Planned |
-| 8 | PW2 browser, refresh, continuous awake, sleep/reconnect, touch forms, TLS/cookies and optional native-client feasibility | Planned |
+| Later scope | Optional NAS status, notes and reminders | Planned |
+| 8 | Continuous awake, sleep/reconnect, TLS/cookies, Phase 2 dashboard fit on PW2 and optional native-client feasibility | Planned. Screen fit, 30-second refresh, standard POST and manual refresh confirmed on the diagnostic. |

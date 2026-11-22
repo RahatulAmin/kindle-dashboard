@@ -2,6 +2,7 @@ from alembic import context
 
 from app.core.config import Settings
 from app.db.database import Base, Database
+from app.models import dashboard  # Register model metadata for Alembic autogeneration.
 
 config = context.config
 
@@ -23,6 +24,7 @@ else:
     try:
         database.path.parent.mkdir(parents=True, exist_ok=True)
         with database.engine.begin() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             run_online(connection)
     finally:
         database.close()

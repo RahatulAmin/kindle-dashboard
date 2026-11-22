@@ -2,13 +2,30 @@
 
 The target is the Amazon Kindle Paperwhite 2, sixth generation (2013), with firmware 5.12.2. Its six-inch e-ink touchscreen has a native portrait resolution of 758 × 1024 pixels and 16 grayscale levels. It uses Wi-Fi and Amazon’s experimental browser.
 
-Phase 1 uses a basic HTML image page, a high-contrast grayscale PNG, and manual reload. Browser viewport scaling, PNG display, cache behavior, automatic refresh, screen sleep, continuous-awake behavior and standard touchscreen forms all need verification on the physical device. Browser chrome may reduce the usable screen area. Timer accuracy will eventually come from server-side timestamps independently of display refreshes.
+## Physical observations
 
-## Physical tests
+- The Kindle reached Dashboard NAS over the local network and loaded `/kindle` in the experimental browser.
+- The server-rendered 758 × 1024 grayscale PNG displayed with readable text.
+- The browser toolbar reduced the usable height and the page required vertical scrolling.
+- The Kindle toolbar and the server-rendered clock showed different times. The cause is unverified. The diagnostic labels the server time with its timezone abbreviation and UTC offset for comparison.
 
-1. Bind the application to Dashboard NAS’s trusted LAN IPv4 address and connect the Kindle to that network.
-2. Open `http://<Dashboard NAS-LAN-IP>:8765/kindle` in the experimental browser. Verify load, orientation, scaling, contrast, readability and browser chrome. Open `/api/kindle/image.png` directly if needed.
-3. Reload manually and confirm the displayed time changes. Observe Wi-Fi reconnect, wake recovery, caching and idle/sleep behavior.
-4. In a later phase, measure 30-second Pomodoro refreshes across active, paused and resumed states. Check background, sleep and wake behavior and e-ink ghosting.
-5. Verify ordinary HTML form buttons, touch target sizing, duplicate submissions, and the supported TLS/cookie behavior before releasing authenticated device controls.
-6. Evaluate a native client if the browser cannot meet the requirements. Any path involving device modification requires a separate decision. No jailbreak, firmware change or device modification is part of this project phase.
+## Browser diagnostic
+
+Open `http://<Dashboard NAS-LAN-IP>:8765/kindle/test` on the trusted LAN. The shared last-press timestamp lives only in the running app's memory and resets on restart. Tap **Test Touch** to POST the timestamp, then the browser should follow a redirect back to the page. **Refresh Now** and the 30-second meta refresh use GET and leave the last press unchanged.
+
+1. Open the diagnostic in portrait with the toolbar visible. Check that the timestamp, both buttons, and the complete image are visible without scrolling. Record any clipping, scaling, or toolbar-dependent behavior.
+2. Compare the displayed server timestamp and UTC offset with the toolbar clock and a known local clock. Record the difference and each device's timezone if available.
+3. Leave the page open without touching it for at least 70 seconds. Record whether the timestamp advances about every 30 seconds and whether the image updates. Repeat across sleep, wake, and Wi-Fi reconnect. Continuous-awake behavior is still unknown.
+4. Tap **Test Touch**. Verify that a new last-press timestamp appears after the redirect. Tap **Refresh Now** and confirm that server time advances and last press remains unchanged. Check that subsequent automatic refreshes preserve last press and do not ask to resubmit the form.
+
+Headless Firefox displayed the full image and both buttons without scrolling at 758 × 860 and 360 × 520 window sizes. The POST redirect, manual refresh and 30-second meta refresh worked, and reloads preserved the last press. The physical PW2 on firmware 5.12.2 subsequently passed screen fitting, 30-second automatic refresh, the touchscreen HTML POST form, and manual refresh on the diagnostic.
+
+## Phase 2 dashboard
+
+Enable Kindle sharing in **Settings** and open `/kindle` to see the data-backed Pillow image. The page uses the same simple viewport sizing and HTML refresh approach. It defaults to 30 seconds and the 758 × 1024 grayscale image contains bounded, single-line entries. Confirm the complete populated image fits beneath the toolbar on the physical Kindle. Check long entries, widget changes, stale weather, and readable text when the image is scaled.
+
+The diagnostic at `/kindle/test` remains separate. It can still be used to compare the toolbar clock against the server timestamp and test touch, wake, or reconnect behavior.
+
+## Later physical tests
+
+During Pomodoro development, measure refresh behavior across active, paused and resumed states and look for e-ink ghosting. The timer will use server timestamps independently of display refreshes. Verify TLS and cookie support before releasing authenticated device controls. If the browser cannot meet the requirements, evaluate an optional native client. Any device modification requires a separate decision.

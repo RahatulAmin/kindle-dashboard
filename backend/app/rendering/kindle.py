@@ -62,7 +62,6 @@ def render_png(settings: Settings, widgets: tuple[Widget, ...] = (draw_title, dr
             return buffer.getvalue()
 
 
-@router.get("/kindle", include_in_schema=False)
 def kindle_page(request: Request):
     return templates.TemplateResponse(
         request=request, name="display.html", context={"settings": request.app.state.settings},

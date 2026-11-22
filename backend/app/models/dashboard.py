@@ -1,0 +1,59 @@
+from datetime import UTC, date, datetime, time
+
+from sqlalchemy import JSON, Date, ForeignKey, String, Text, Time
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.database import Base
+
+
+def utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="microseconds")
+
+
+class Admin(Base):
+    __tablename__ = "administrator"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+
+
+class AdminSession(Base):
+    __tablename__ = "administrator_session"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("administrator.id", ondelete="CASCADE"))
+    expires_at: Mapped[int] = mapped_column(index=True)
+
+
+class DashboardSettings(Base):
+    __tablename__ = "dashboard_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    preferences: Mapped[dict] = mapped_column(JSON)
+
+
+class Entry:
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(6))
+    completed: Mapped[bool]
+    kindle_visible: Mapped[bool]
+    created_at: Mapped[str] = mapped_column(String(40), default=utc_timestamp)
+    updated_at: Mapped[str] = mapped_column(String(40), default=utc_timestamp, onupdate=utc_timestamp)
+
+
+class Task(Entry, Base):
+    __tablename__ = "task"
+
+    due_date: Mapped[date | None] = mapped_column(Date)
+    position: Mapped[int]
+
+
+class Deadline(Entry, Base):
+    __tablename__ = "deadline"
+
+    due_date: Mapped[date] = mapped_column(Date, index=True)
+    due_time: Mapped[time | None] = mapped_column(Time)
+    archived: Mapped[bool]

@@ -1,6 +1,6 @@
 # SQLite and Alembic
 
-Startup applies the Alembic upgrade before serving requests. The baseline revision `0001` creates only Alembic’s version bookkeeping through Alembic itself. Future SQLAlchemy models should inherit the shared Base in `app.db.database`, live in domain modules and be imported by the Alembic environment before autogeneration. SQLAlchemy connections enforce foreign keys. Request code should acquire sessions with a context manager and keep write transactions short. Operate one application replica while startup owns migration.
+Startup applies the Alembic upgrade before serving requests. Revision `0001` establishes Alembic bookkeeping. Revision `0002` adds administrator accounts and sessions, tasks, deadlines, and dashboard preferences. An immediate SQLite transaction serializes upgrades and preserves the existing database if an upgrade fails. Future SQLAlchemy models should inherit the shared Base in `app.db.database`, live in domain modules and be imported by the Alembic environment before autogeneration. SQLAlchemy connections enforce foreign keys. Request code should acquire sessions with a context manager and keep write transactions short. Operate one application replica while startup owns migration.
 
 From the project root, check or apply the revision explicitly using the same settings as the app.
 

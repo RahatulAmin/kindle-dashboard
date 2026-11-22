@@ -1,6 +1,6 @@
 # Kindle Dashboard
 
-A self-hosted dashboard foundation for Dashboard NAS. FastAPI serves a React administration shell and a separate HTML page for the Kindle. SQLite is initialized through Alembic. The Kindle test display is a grayscale PNG rendered on the server with Pillow.
+A self-hosted productivity dashboard for Dashboard NAS. Administrators manage tasks, deadlines, weather location, and widgets in React. FastAPI stores data in SQLite and serves a script-free Kindle page with a grayscale Pillow image. The dashboard can share selected data with the Kindle over a trusted LAN.
 
 ## Local installation
 
@@ -21,10 +21,26 @@ npm --prefix frontend run build
 bash scripts/prepare-storage.sh
 ```
 
+## Migrate and create the administrator
+
+For an existing installation, make a verified [SQLite backup](docs/DATABASE.md) and stop the application before upgrading. Revision `0002` adds the Phase 2 tables to the existing database. The setup command and app startup both apply pending migrations.
+
+```bash
+cd /srv/kindle-dashboard/project
+bash scripts/prepare-storage.sh
+umask 077
+PYTHONPATH=backend .venv/bin/python -m app.setup_admin admin
+```
+
+Choose your own username in place of `admin` and enter a unique password of at least 12 characters at the prompt. This is a one-time terminal setup. Sign in through the admin page afterward. Keep the SQLite database, sidecar files, and backups readable only by trusted NAS users and the app's UID. Review existing file permissions when upgrading an older installation.
+
+## Run locally
+
 Start the application in the foreground.
 
 ```bash
 cd /srv/kindle-dashboard/project
+umask 077
 bash scripts/prepare-storage.sh && PYTHONPATH=backend .venv/bin/python -m app
 ```
 
@@ -34,10 +50,20 @@ Press **Ctrl+C** in the server terminal to stop it.
 | --- | --- |
 | Administration overview | http://127.0.0.1:8765/ |
 | Health | http://127.0.0.1:8765/api/v1/health |
-| Kindle test page | http://127.0.0.1:8765/kindle |
-| Raw PNG | http://127.0.0.1:8765/api/kindle/image.png |
+| Kindle display | http://127.0.0.1:8765/kindle |
+| Kindle browser diagnostic | http://127.0.0.1:8765/kindle/test |
+
+The admin cookie defaults to Secure and should be used over trusted HTTPS. If you need to sign in from another device over trusted-LAN plain HTTP, explicitly set `ADMIN_COOKIE_SECURE=false` in `.env` and restart. HTTP exposes the password and session to anyone who can observe or manipulate LAN traffic. Keep the app off the public internet and prefer administering over HTTPS or locally on Dashboard NAS. The Kindle display and diagnostic can use LAN HTTP independently of administrator sign-in.
 
 For controlled LAN testing, set `APP_HOST` in `.env` to Dashboard NAS’s specific trusted LAN IPv4 address and restart. Replace `127.0.0.1` in the URLs with that address. Keep the port off public reverse proxies and router port forwarding. Return to loopback when LAN testing ends. The Vite dev server uses loopback and proxies to the configured backend. With the backend running, start it with `npm --prefix frontend run dev`.
+
+## Use the dashboard
+
+- **Tasks** supports manual position, priority, due date and title sorting, plus status and text filtering.
+- **Deadlines** lists chronological entries. Same-day timed entries precede date-only entries. Countdown is the number of calendar days from today in America/Toronto.
+- **Settings** controls the dashboard title, refresh interval, weather location and Kindle sharing. When sharing is enabled, anyone who can reach the Kindle page can see the selected widget content. The browser diagnostic continues to show its separate test image.
+- **Widgets** controls visibility and order. Tasks and deadlines accept item limits and share the available image space. Pomodoro and NAS status preferences are reserved for later phases.
+- **Weather** defaults to Montréal and caches Open-Meteo conditions for 15 minutes in memory. A failed refresh displays the last successful snapshot if available and retries after one minute. The cache resets on app restart.
 
 ## Compose deployment
 
