@@ -10,3 +10,6 @@ dist/
 *.db
 *.db-*
 *.log
+
+/kindle-native/rahat-dashboard/config.sh
+/kindle-native/rahat-dashboard/state/

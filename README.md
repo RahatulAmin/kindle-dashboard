@@ -65,6 +65,10 @@ For controlled LAN testing, set `APP_HOST` in `.env` to Dashboard NAS’s specif
 - **Widgets** controls visibility and order. Tasks and deadlines accept item limits and share the available image space. Pomodoro and NAS status preferences are reserved for later phases.
 - **Weather** defaults to Montréal and caches Open-Meteo conditions for 15 minutes in memory. A failed refresh displays the last successful snapshot if available and retries after one minute. The cache resets on app restart.
 
+## Native Kindle preview via KUAL
+
+The Phase 2.5A extension provides one-shot connectivity and native display tests while the Kindle framework continues running. Download the [KUAL ZIP](kindle-native/rahat-dashboard.zip) and follow the [Windows USB installation, physical test, log collection, and recovery instructions](kindle-native/rahat-dashboard/README.md). The package defaults to `192.0.2.10`. Use Dashboard NAS's current LAN address in `config.sh`; it was `192.0.2.10` during verification.
+
 ## Compose deployment
 
 **Deferred on Dashboard NAS.** The daemon uses the system partition and the inspection found 4.0 GB free. Before building, check `df -h / /srv`, the Docker data root and its mount, and the port. Build only when storage conditions safely permit it.

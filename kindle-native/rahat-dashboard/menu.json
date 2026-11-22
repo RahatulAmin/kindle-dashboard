@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "name": "Rahat Dashboard",
+      "items": [
+        {"name": "Test NAS Connection", "action": "./test-connection.sh", "exitmenu": false},
+        {"name": "Test Native Image Display", "action": "./test-display.sh", "exitmenu": true},
+        {"name": "Start Dashboard", "action": "./start.sh", "exitmenu": true},
+        {"name": "Stop / Restore Kindle", "action": "./stop.sh", "exitmenu": false}
+      ]
+    }
+  ]
+}

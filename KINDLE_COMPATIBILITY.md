@@ -26,6 +26,12 @@ Enable Kindle sharing in **Settings** and open `/kindle` to see the data-backed 
 
 The diagnostic at `/kindle/test` remains separate. It can still be used to compare the toolbar clock against the server timestamp and test touch, wake, or reconnect behavior.
 
+## Phase 2.5A native KUAL preview
+
+The Paperwhite 2 is already jailbroken and has KUAL installed. The packaged `rahat-dashboard` extension downloads and validates the test image, then can draw it once with the device's `eips -g` utility while Amazon's interface continues running. An Amazon repaint may cover the image. The NAS test verified the real PNG endpoint and a packaged BusyBox shell download.
+
+KUAL launch, the available native utilities, physical image rendering, and Home/power-button recovery still need a device test. The [extension guide](kindle-native/rahat-dashboard/README.md) includes exact USB paths, test steps, and log collection. Framework takeover, refresh loops, and boot startup are outside this package.
+
 ## Later physical tests
 
 During Pomodoro development, measure refresh behavior across active, paused and resumed states and look for e-ink ghosting. The timer will use server timestamps independently of display refreshes. Verify TLS and cookie support before releasing authenticated device controls. If the browser cannot meet the requirements, evaluate an optional native client. Any device modification requires a separate decision.

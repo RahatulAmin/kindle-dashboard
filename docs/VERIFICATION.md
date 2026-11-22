@@ -32,6 +32,18 @@ docker compose --env-file .env.example config --quiet
 | TypeScript and Vite production build | Passed |
 | Headless Firefox | Passed for sign-in, task and deadline creation, widget ordering, settings and sharing, no horizontal overflow at phone width, full Kindle image fit, diagnostic access, and sign-out. |
 | Open-Meteo on Dashboard NAS | Live Montréal request returned current conditions and daily high and low. |
-| Alembic | A read-only SQLite backup of the NAS database upgraded from `0001` to `0002` and passed `PRAGMA integrity_check`. A fresh temporary database also upgraded and passed the metadata drift check. Live SQLite remains at `0001` until Phase 2 setup or startup. |
+| Alembic | A read-only SQLite backup of the NAS database upgraded from `0001` to `0002` and passed `PRAGMA integrity_check`. A fresh temporary database also upgraded and passed the metadata drift check. At the Phase 2 handoff, live SQLite was still at `0001`. |
 | Compose configuration | Passed with defaults and `.env.example`. The shared Ubuntu partition still has 4.0 GB available, so the build and live container health check were deferred. |
 | Physical Kindle | The user confirmed screen fit, automatic 30-second refresh, HTML POST, and manual refresh on the diagnostic. The Phase 2 populated display was verified in Firefox and still needs a physical check. |
+
+## Phase 2.5A KUAL package
+
+| Check | Result |
+| --- | --- |
+| Live SQLite backup and migration | Verified `0001` backup, mode 600, at `data/backups/dashboard-20261122T231646416498Z.sqlite3` under the the data volume project storage root. Live database upgraded to `0002`, passed integrity check, and matches Alembic metadata. |
+| Live FastAPI endpoints | Temporarily started on `192.0.2.10:8765`. Health and the synthetic PNG returned HTTP 200. Pillow verified the PNG as 758 × 1024 grayscale. Real-data sharing remained disabled and the populated endpoint returned 404. Stopped the temporary app afterward. |
+| Packaged client and timeouts | The extracted client fetched and validated the NAS image under BusyBox ash. A stalled test endpoint returned curl exit 28 after 20.0 seconds. The previously cached image stayed intact. |
+| Automated suite | 25 passed. Includes XML and JSON syntax, menu paths, shell syntax, HTTP failures and invalid PNGs, log messages, cache retention, mocked eips invocation, overlap and cancellation. |
+| ZIP | Rebuilt twice with identical SHA-256, passed archive integrity, and verified LF, UNIX script permissions, and the exact nine-file allowlist under `extensions/rahat-dashboard/`. |
+| Physical Kindle | KUAL menu launch, curl and eips on the device, native rendering, Amazon repaint and recovery are pending. The extension has one-shot actions only. |
+| NAS storage | Ubuntu root had 3.8 GB free and the data volume had 167 GB free. No dependencies, Docker build, or NAS service changes were needed. |

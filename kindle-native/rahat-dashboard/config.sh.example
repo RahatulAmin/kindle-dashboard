@@ -1,0 +1,6 @@
+# Copy to config.sh. Use LF line endings and the NAS address reachable by Wi-Fi.
+SERVER_URL='http://192.0.2.10:8765'
+
+# Begin with the synthetic image. Use /api/kindle/dashboard.png only after
+# enabling trusted-LAN Kindle sharing in the administration settings.
+IMAGE_PATH='/api/kindle/image.png'

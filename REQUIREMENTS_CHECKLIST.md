@@ -36,6 +36,20 @@ Statuses are **Planned**, **Implemented**, **Tested**, **Blocked**, and **Not ap
 | Alembic 0001 → 0002, existing-row preservation and restart recovery | Tested against temporary databases |
 | Docker build and runtime on Dashboard NAS | Blocked by Ubuntu partition space |
 
+## Phase 2.5A
+
+| Requirement | Status |
+| --- | --- |
+| Inspect Kindle endpoints and auth, back up live SQLite before migration, verify integrity and revision | Tested. Live database is at `0002`. |
+| Review PW2 KUAL metadata, curl/eips rendering, process detachment, framework restoration, and power-button recovery | Implemented in the reference and recovery documentation. |
+| Four KUAL actions, POSIX shell, writable USB state, no administrator credentials | Tested locally. KUAL loading pending on hardware. |
+| Configurable NAS address, HTTP 200 and PNG checks, timeouts, logs, retained last verified frame | Tested with loopback fixtures and a live NAS download from the ZIP. |
+| Safe one-shot startup, stop/cancellation, no framework takeover, refresh loop, or startup hook | Tested with a mocked eips utility and cancellation during a fetch. |
+| Windows USB install path, logging, uninstall, normal exit, crash and power recovery instructions | Implemented |
+| ZIP layout, LF, content integrity and script permissions | Tested |
+| On-device utility availability, native rendering, UI repaint and recovery test | Planned |
+| Framework takeover, automatic refresh and autostart | Not applicable to Phase 2.5A |
+
 ## Later phases
 
 | Phase | Requirements | Status |

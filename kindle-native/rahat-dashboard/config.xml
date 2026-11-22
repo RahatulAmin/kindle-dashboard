@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+  <information>
+    <name>Rahat Dashboard</name>
+    <version>0.1.0</version>
+    <author>Rahat Dashboard</author>
+    <id>rahat-dashboard</id>
+  </information>
+  <menus>
+    <menu type="json" dynamic="true">menu.json</menu>
+  </menus>
+</extension>
