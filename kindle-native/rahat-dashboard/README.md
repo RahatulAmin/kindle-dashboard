@@ -1,16 +1,15 @@
 # Rahat Dashboard for KUAL
 
-Phase 2.5A is a manual, one-shot test for a jailbroken Kindle Paperwhite 2 with KUAL already installed. It uses the Kindle's POSIX shell, curl, and `eips -g` to fetch and display a server-rendered 758 × 1024 8-bit grayscale PNG. The Amazon framework stays running and may quickly repaint part or all of the native image. Phase 2.5A does not control the framework, input devices, power settings, or boot behavior.
+Phase 2.5B adds a native full-screen dashboard for a jailbroken Paperwhite 2 on firmware 5.12.2. Phase 2.5A proved KUAL launch, NAS download and `eips -g` on the physical device. This release still needs physical testing of framework shutdown, periodic full refresh and recovery. The package defaults to the safe one-shot preview. Nothing launches at boot.
 
-## Server and connection
+## Install or upgrade over USB from Windows
 
-The extension ships with `http://192.0.2.10:8765` as its requested default. Dashboard NAS was configured at **192.0.2.10:8765** when this package was prepared. Verify its current LAN address and use it in `config.sh`. The FastAPI app must be running on that address for the test.
+1. Save and extract `rahat-dashboard.zip` using **Extract All**. If your Windows machine already has SSH access to Dashboard NAS, PowerShell can copy the archive with `scp user@192.0.2.10:/srv/kindle-dashboard/project/kindle-native/rahat-dashboard.zip .`.
+2. Stop any running Kindle dashboard and wait for Home before connecting USB. Copy the extracted `extensions\rahat-dashboard` folder to the Kindle drive's root `extensions` folder. Replace the old packaged files and keep your existing `config.sh` and `state` folder. The final path is `E:\extensions\rahat-dashboard\config.xml` (substitute the drive letter), or `/mnt/us/extensions/rahat-dashboard/config.xml` on the Kindle.
+3. For a new install, copy `config.sh.example` to `config.sh`. Enable **View → Show → File name extensions** in File Explorer and preserve Unix LF and UTF-8 without BOM. Use `SERVER_URL='http://192.0.2.10:8765'` and `IMAGE_PATH='/api/kindle/image.png'` for the first test. Omit `FULLSCREEN_ENABLED` or set it to `no` initially. The refreshed ZIP uses the address verified on your Kindle.
+4. Eject the Kindle in Windows and disconnect USB before opening KUAL. Check the Kindle is on the same Wi-Fi network as Dashboard NAS.
 
-- `/api/kindle/image.png` serves the synthetic test image and is the starting endpoint.
-- `/api/kindle/dashboard.png` serves real data after an administrator enables Kindle sharing in **Settings**. Trusted-LAN clients can read this image while sharing is enabled. Leave sharing off for the initial test.
-- The extension sends no administrator credentials or session cookies. The synthetic read-only endpoint needs no credential. For real data on an untrusted network, private device authentication would need a separate design.
-
-On Dashboard NAS, start the project in a foreground terminal. Use the current LAN IPv4 address.
+If the NAS app is stopped, start it in a foreground NAS terminal using the current trusted LAN address.
 
 ```sh
 cd /srv/kindle-dashboard/project
@@ -18,36 +17,39 @@ umask 077
 bash scripts/prepare-storage.sh && APP_HOST=192.0.2.10 PYTHONPATH=backend .venv/bin/python -m app
 ```
 
-From Windows, open `http://192.0.2.10:8765/api/kindle/image.png` in a browser before testing the Kindle. Use Ctrl+C on the NAS to stop that foreground instance when finished.
+Visit `http://192.0.2.10:8765/api/kindle/image.png` from Windows to check that the synthetic PNG is reachable. The optional `/api/kindle/dashboard.png` serves real data only after an administrator enables trusted-LAN Kindle sharing in **Settings**. Both image requests use no admin cookies or credentials. Keep the synthetic endpoint for the first full-screen test.
 
-## Install over USB from Windows
+## Verify recovery with the framework running
 
-1. Save `rahat-dashboard.zip` to Windows from the project. If you already use SSH on Dashboard NAS, PowerShell can copy it with `scp user@192.0.2.10:/srv/kindle-dashboard/project/kindle-native/rahat-dashboard.zip .`.
-2. Right-click the ZIP and select **Extract All**. Inside the extracted folder, open `extensions`.
-3. Plug the Kindle into Windows using a USB data cable and open the Kindle drive in File Explorer. Create `extensions` at the drive root if needed. Copy the extracted `rahat-dashboard` folder into it.
-4. Verify the final path is `E:\extensions\rahat-dashboard\config.xml`, substituting the actual drive letter. On the Kindle this is `/mnt/us/extensions/rahat-dashboard/config.xml`.
-5. In that same folder, copy `config.sh.example` to `config.sh`. Enable **View → Show → File name extensions** in File Explorer so the file does not accidentally end in `.txt`. Edit `SERVER_URL` in an editor that preserves Unix LF and UTF-8 without a BOM, such as VS Code. For this NAS, use `SERVER_URL='http://192.0.2.10:8765'` if that address is still current. Leave `IMAGE_PATH` on the synthetic endpoint.
-6. Use **Eject** in Windows and unplug USB before launching KUAL. Keep the Kindle on the same Wi-Fi network as the NAS.
+1. In KUAL, run **Test NAS Connection**, then **Test Native Image Display**. Confirm the preview and return Home. This version keeps those actions from Phase 2.5A.
+2. With the normal Kindle interface running, verify that a physical long press can restart this exact Kindle. Hold the power button for about 40 seconds and release, then confirm Home and KUAL return. [Amazon Kindle restart instructions](https://digprjsurvey.amazon.com/csad/help/node/G9WDGDTCSDQMSU7Z)
+3. After the restart, open **KUAL → Rahat Dashboard → Rehearse Power Button Recovery**. Within 45 seconds, briefly press the power button once, then wake the Kindle if it sleeps. Connect USB after the action finishes and confirm `state/dashboard.log` contains `Recovery rehearsal passed`. This action leaves the framework running and verifies a real 32-bit `KEY_POWER` press using the detected input device. The proof is bound to the current boot and that device path. If the rehearsal fails, leave full-screen disabled.
 
-## First physical test
+## First full-screen test (manual approval)
 
-1. Open **KUAL → Rahat Dashboard → Test NAS Connection**. Allow up to 20 seconds for the request. It downloads and validates the image without drawing it. Reconnect USB and verify that `state/dashboard.log` contains `Download verified` and `state/last-good.png` opens as a 758 × 1024 image on Windows.
-2. Eject and disconnect USB. Run **Test Native Image Display** and watch the screen as KUAL exits its menu. It sends the validated cached PNG to the installed `eips` utility. A success entry records the utility's exit status. Seeing a readable image, noting whether it covers the expected area, and observing how quickly the Amazon UI repaints are physical checks.
-3. Reopen KUAL and select **Start Dashboard**. It downloads and displays a fresh image once. Compare its time with the cached image. Select **Stop / Restore Kindle**, then return Home or sleep and wake to confirm a normal repaint.
-4. With airplane mode enabled or the NAS app stopped, repeat **Test NAS Connection**. Verify the log reports failure and the previous PNG still opens. Then restore connectivity. The cached image can still be displayed manually from **Test Native Image Display**.
+Only proceed after both recovery checks above pass and you approve stopping the GUI for this test. While still on the same boot, edit the Kindle's `config.sh` via USB.
 
-## Logs and recovery
+```sh
+FULLSCREEN_ENABLED=yes
+REFRESH_SECONDS=30
+FULL_REFRESH_EVERY=2
+SESSION_LIMIT_SECONDS=120
+```
 
-After an action completes, connect USB and copy `extensions\rahat-dashboard\state\dashboard.log` from the Kindle drive. Include the firmware and the KUAL action you ran. The file's date comes from the Kindle clock. Keep `last-good.png` private if it contains dashboard data. The connection test checks the HTTP status, PNG signature, dimensions, grayscale and interlace flags, first data chunk and closing marker. It does not decode every pixel or verify all chunk checksums. The display action asks the installed `eips` to read the actual PNG.
+1. Eject USB. Open **KUAL → Rahat Dashboard → Start Dashboard**. A detached supervisor checks the recovery proof and monitors the key before fetching the first frame. It requests a framework stop only after validating a fresh 758 × 1024 grayscale PNG.
+2. Confirm the dashboard remains on the full screen and the timestamp changes across refreshes. The first paint and every second update use `eips -f -g` in this configuration. Offline fetches preserve and redraw the last valid image.
+3. Press the power button **once**, then wait for Home to restore. The Kindle may sleep as part of normal power handling. If it sleeps, wake it and give Home time to repaint. Expect startup to take tens of seconds and allow up to two minutes before using the reboot fallback. KUAL may be unavailable while the framework is down.
+4. Confirm Home, touch, Wi-Fi and KUAL work normally. Collect the log. If manual exit succeeds, repeat the test and let the 120-second session limit restore Home without pressing power. Keep the timed limit until both tests pass.
+5. After those physical checks succeed, `SESSION_LIMIT_SECONDS=0` allows a persistent manual session. `REFRESH_SECONDS` supports 30–3600 seconds, `FULL_REFRESH_EVERY` supports 1–60 updates, and the session limit supports 60–9999 seconds or 0. The default preview flag remains `no`; if enabled, each reboot still requires a fresh recovery rehearsal.
 
-- **Normal exit:** Each action completes after one attempt. Return Home or press the power button once to sleep and again to wake if the image is still visible.
-- **Stop during a download:** **Stop / Restore Kindle** requests cancellation. The fetch can take up to 20 seconds to return. The script checks cancellation before saving or drawing and leaves the existing cache available. A draw that already began may finish.
-- **App cannot reach Dashboard NAS:** Confirm Wi-Fi, the LAN address and endpoint. HTTP 404 on the real endpoint commonly means sharing is off. Use the synthetic endpoint to retest. The last verified image remains available.
-- **Crash or stuck test:** Restart the Kindle normally if its UI is responsive. If the screen is unresponsive, first wait for the bounded download, then try one power-button sleep/wake cycle. As a last resort, hold the power button for about 40 seconds and release to restart. [Amazon Kindle restart instructions](https://digprjsurvey.amazon.com/csad/help/node/G9WDGDTCSDQMSU7Z) Once restarted, you can remove a leftover `state/active` directory via USB if the log reports a stale marker. Leave `last-good.png` in place if you want to retain the cache.
-- **Remove the extension:** After any action finishes, remove `extensions\rahat-dashboard` over USB. Copy out the log first if needed.
+## Stop, recover and collect logs
 
-## Framework takeover design for a later phase
+- **Normal full-screen exit:** Press the physical power button briefly once. If a shell connection already exists, `/bin/sh /mnt/us/extensions/rahat-dashboard/stop.sh` is an alternative. The KUAL Stop action is useful only when KUAL is available.
+- **Restoration:** The supervisor terminates its display worker before restarting the `framework` job and requesting Home. A failed draw, worker exit, lost power monitor, missing runtime directory, or elapsed session limit triggers the same restoration. The supervisor handles normal termination signals. A crash that kills the supervisor itself may require a restart.
+- **Unresponsive screen:** Let restoration finish and try waking once if the device slept. If Home still fails to return, use the verified physical restart (hold power about 40 seconds, then release). A reboot starts the Kindle normally. After restarting you may remove a stale `state/active` directory over USB if it blocks another test. Set `FULLSCREEN_ENABLED=no` before retrying a failure.
+- **NAS unavailable:** A failed initial download leaves the framework running. After startup a failed refresh keeps the last verified image and retries on the configured interval. Each fetch has 5-second connection and 20-second total limits.
+- **Logs:** After Home returns, connect USB and copy `extensions\rahat-dashboard\state\dashboard.log` and, if present, `dashboard.log.1`. Include firmware and what the screen did. Keep `last-good.png` private if it contains real dashboard data.
 
-Before any separately approved takeover, verify a valid frame and the power-button exit path on physical hardware with the framework still running. A future worker and recovery supervisor must detach from KUAL's framework process tree with a separate session, such as `setsid`, before requesting framework shutdown. The worker would draw only after shutdown finishes because the framework can blank the display as it exits. Recovery should track whether this app stopped the framework, restore it on shutdown or crash, wait for the application manager, and request a Home repaint. A single power press should request recovery and allow time for Home to return. Keep a physical restart fallback and test it before enabling takeover. The power-event layout and restoration timing in the references are device-specific. [jackwuwei Paperwhite reference](https://github.com/jackwuwei/kindle-dashboard#4-pitfalls-read-before-changing-anything) · [ZEUSGMJ PW2 recovery reference](https://github.com/ZEUSGMJ/kindle-homelab-dashboard#exit-behavior)
+Only the Upstart `framework` job is stopped. Power management, automatic sleep, Wi-Fi and battery and thermal protections retain their stock settings. Refreshes and the session timer run while the device is awake. The extension changes no root filesystem files or startup settings.
 
-KUAL metadata follows the published menu structure. The initial renderer uses the references' PNG drawing approach with the system UI running. [KUAL config and menu examples](https://github.com/ZEUSGMJ/kindle-homelab-dashboard/tree/main/kindle-extension) · [Native PNG reference](https://github.com/ZEUSGMJ/kindle-homelab-dashboard/blob/main/kindle-extension/bin/dash_loop.sh)
+The recovery design follows the PW2 references for detaching with `setsid`, drawing after the framework stops, and requesting Home after restoration. The Kindle's exact `initctl` behavior, power handling during takeover, and native full-refresh option remain part of the physical test. [PW2 framework notes](https://github.com/jackwuwei/kindle-dashboard#4-pitfalls-read-before-changing-anything) · [PW2 display and recovery code](https://github.com/ZEUSGMJ/kindle-homelab-dashboard/blob/main/kindle-extension/bin/dash_loop.sh) · [Upstart command reference](https://manpages.debian.org/wheezy/upstart/start.8.en.html)

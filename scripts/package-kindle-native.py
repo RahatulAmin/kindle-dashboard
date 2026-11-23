@@ -8,7 +8,7 @@ NATIVE = Path(__file__).resolve().parents[1] / "kindle-native"
 EXTENSION = "rahat-dashboard"
 FILES = (
     "config.xml", "menu.json", "config.sh.example", "test-connection.sh",
-    "test-display.sh", "start.sh", "stop.sh", "client.sh", "README.md",
+    "test-display.sh", "test-recovery.sh", "start.sh", "stop.sh", "client.sh", "fullscreen.sh", "README.md",
 )
 
 

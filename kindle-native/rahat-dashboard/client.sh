@@ -14,17 +14,18 @@ PART="$JOB/frame.part"
 mkdir -p "$STATE" || exit 1
 
 log() {
-    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "$LOG"
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" 2>/dev/null >> "$LOG" || :
 }
 
 cleanup() {
-    rm -f "$PART" "$JOB/cancel"
+    rm -f "$PART" "$JOB/cancel" "$JOB/monitor-ready" "$JOB/input-event" \
+        "$JOB/power-pressed" "$JOB/proof" "$JOB/worker-allowed"
     rmdir "$JOB" 2>/dev/null || :
 }
 
 cancelled() {
     if [ -f "$JOB/cancel" ]; then
-        log "Action cancelled; Kindle framework left running."
+        log "Action cancelled."
         return 0
     fi
     return 1
@@ -86,26 +87,102 @@ display() {
         log "Display failed: eips is unavailable."
         return 1
     fi
-    log "Rendering cached PNG with eips -g."
-    if ! eips -g "$FRAME" >> "$LOG" 2>&1; then
+    if [ "${1:-}" = full ]; then
+        set -- -f -g "$FRAME"
+    else
+        set -- -g "$FRAME"
+    fi
+    log "Rendering cached PNG ($1)."
+    if ! eips "$@" >> "$LOG" 2>&1; then
         log "Display failed: eips returned an error."
         return 1
     fi
     log "eips accepted the image. Check the screen for the result."
 }
 
-case "${1:-}" in
+load_config() {
+    SERVER_URL='http://192.0.2.10:8765'
+    IMAGE_PATH='/api/kindle/image.png'
+    FULLSCREEN_ENABLED=no
+    REFRESH_SECONDS=60
+    FULL_REFRESH_EVERY=5
+    SESSION_LIMIT_SECONDS=120
+    if [ -f "$BASE/config.sh" ]; then
+        . "$BASE/config.sh" || return 1
+    fi
+    SERVER_URL=${SERVER_URL%/}
+    case "$SERVER_URL" in
+        http://*) authority=${SERVER_URL#http://} ;;
+        https://*) authority=${SERVER_URL#https://} ;;
+        *) log "Invalid SERVER_URL: expected an HTTP or HTTPS origin."; return 1 ;;
+    esac
+    case "$authority" in
+        ''|*[!A-Za-z0-9.:-]*) log "Invalid SERVER_URL: use a hostname or IPv4 address and optional port."; return 1 ;;
+    esac
+    case "$IMAGE_PATH" in
+        /api/kindle/image.png|/api/kindle/dashboard.png) ;;
+        *) log "Invalid IMAGE_PATH: use a supported Kindle PNG endpoint."; return 1 ;;
+    esac
+}
+
+full_config_valid() {
+    case "$FULLSCREEN_ENABLED" in yes|no) ;; *) return 1 ;; esac
+    for value in "$REFRESH_SECONDS" "$FULL_REFRESH_EVERY" "$SESSION_LIMIT_SECONDS"; do
+        case "$value" in ''|*[!0-9]*|0?*|?????*) return 1 ;; esac
+    done
+    [ "$REFRESH_SECONDS" -ge 30 ] && [ "$REFRESH_SECONDS" -le 3600 ] &&
+        [ "$FULL_REFRESH_EVERY" -ge 1 ] && [ "$FULL_REFRESH_EVERY" -le 60 ] &&
+        { [ "$SESSION_LIMIT_SECONDS" -eq 0 ] || [ "$SESSION_LIMIT_SECONDS" -ge 60 ]; }
+}
+
+MODE=${1:-}
+case "$MODE" in
     stop)
         if [ -d "$JOB" ] && { : > "$JOB/cancel"; } 2>/dev/null; then
-            log "Stop requested. A download may take up to 20 seconds to exit."
+            log "Stop requested. An in-progress download or restore may take time."
         else
             log "No dashboard action running."
         fi
-        log "Kindle framework remains running. Return Home or sleep and wake to repaint."
         exit 0
         ;;
-    connection|display|start) ;;
+    start|connection|supervise|worker)
+        load_config || exit 1
+        ;;
+    rehearse|rehearse-session|display) ;;
     *) exit 2 ;;
+esac
+
+case "$MODE" in
+    start|supervise|worker|rehearse|rehearse-session)
+        . "$BASE/fullscreen.sh" || exit 1
+        ;;
+esac
+
+case "$MODE" in
+    start|supervise|worker)
+        if ! full_config_valid; then
+            log "Invalid full-screen settings; see config.sh.example."
+            exit 1
+        fi
+        ;;
+esac
+
+case "$MODE" in
+    start)
+        if [ "$FULLSCREEN_ENABLED" = yes ]; then
+            launch_detached supervise
+            exit $?
+        fi
+        ;;
+    rehearse)
+        launch_detached rehearse-session
+        exit $?
+        ;;
+    worker)
+        [ "$FULLSCREEN_ENABLED" = yes ] || exit 1
+        refresh_loop
+        exit $?
+        ;;
 esac
 
 if ! mkdir "$JOB" 2>/dev/null; then
@@ -115,31 +192,9 @@ fi
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
 
-if [ "$1" = display ]; then
-    display
-    exit $?
-fi
-
-SERVER_URL='http://192.0.2.10:8765'
-IMAGE_PATH='/api/kindle/image.png'
-if [ -f "$BASE/config.sh" ]; then
-    . "$BASE/config.sh" || exit 1
-fi
-SERVER_URL=${SERVER_URL%/}
-case "$SERVER_URL" in
-    http://*) authority=${SERVER_URL#http://} ;;
-    https://*) authority=${SERVER_URL#https://} ;;
-    *) log "Invalid SERVER_URL: expected an HTTP or HTTPS origin."; exit 1 ;;
+case "$MODE" in
+    supervise|rehearse-session) begin_session "$MODE" "$2" ;;
+    display) display ;;
+    start) download && display ;;
+    connection) download ;;
 esac
-case "$authority" in
-    ''|*[!A-Za-z0-9.:-]*) log "Invalid SERVER_URL: use a hostname or IPv4 address and optional port."; exit 1 ;;
-esac
-case "$IMAGE_PATH" in
-    /api/kindle/image.png|/api/kindle/dashboard.png) ;;
-    *) log "Invalid IMAGE_PATH: use a supported Kindle PNG endpoint."; exit 1 ;;
-esac
-
-download || exit 1
-if [ "$1" = start ]; then
-    display
-fi

@@ -4,3 +4,11 @@ SERVER_URL='http://192.0.2.10:8765'
 # Begin with the synthetic image. Use /api/kindle/dashboard.png only after
 # enabling trusted-LAN Kindle sharing in the administration settings.
 IMAGE_PATH='/api/kindle/image.png'
+
+# Leave this disabled until the physical reboot fallback and recovery rehearsal pass.
+FULLSCREEN_ENABLED=no
+REFRESH_SECONDS=60
+FULL_REFRESH_EVERY=5
+# First full-screen test restores Home after 120 awake seconds. Set 0 only
+# after the physical full-screen exit and restoration tests have passed.
+SESSION_LIMIT_SECONDS=120

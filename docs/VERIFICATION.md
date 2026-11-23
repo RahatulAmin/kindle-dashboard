@@ -47,3 +47,14 @@ docker compose --env-file .env.example config --quiet
 | ZIP | Rebuilt twice with identical SHA-256, passed archive integrity, and verified LF, UNIX script permissions, and the exact nine-file allowlist under `extensions/rahat-dashboard/`. |
 | Physical Kindle | KUAL menu launch, curl and eips on the device, native rendering, Amazon repaint and recovery are pending. The extension has one-shot actions only. |
 | NAS storage | Ubuntu root had 3.8 GB free and the data volume had 167 GB free. No dependencies, Docker build, or NAS service changes were needed. |
+
+## Phase 2.5B persistent KUAL display
+
+| Check | Result |
+| --- | --- |
+| Prior hardware baseline | The user confirmed KUAL launch, Wi-Fi download and `eips -g` on their PW2 at firmware 5.12.2, followed by Amazon repaint. |
+| Automated suite | 31 passed, including Dash and BusyBox ash syntax, validated first frame, default-safe preview, gated detached launch, simulated KEY_POWER input, refresh cadence, full-refresh requests, and offline cache retention. |
+| Restoration | Mocked Upstart restored the framework and requested Home after power press, manual stop, display failure, timer expiry, and loss of user storage. No real firmware service commands were executed. |
+| ZIP | Validated KUAL XML and JSON, LF and script modes, and the exact eleven runtime files under `extensions/rahat-dashboard/`. |
+| Physical test | The updated recovery rehearsal, framework stop/start, power and timed recovery, and full-refresh behavior remain pending on the actual Kindle. The package defaults to preview and requires a same-boot key rehearsal and explicit opt-in. |
+| NAS | No application code, database, service, package or deployment changes. |

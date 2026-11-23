@@ -47,8 +47,21 @@ Statuses are **Planned**, **Implemented**, **Tested**, **Blocked**, and **Not ap
 | Safe one-shot startup, stop/cancellation, no framework takeover, refresh loop, or startup hook | Tested with a mocked eips utility and cancellation during a fetch. |
 | Windows USB install path, logging, uninstall, normal exit, crash and power recovery instructions | Implemented |
 | ZIP layout, LF, content integrity and script permissions | Tested |
-| On-device utility availability, native rendering, UI repaint and recovery test | Planned |
+| On-device KUAL, download, eips, and Amazon repaint | Tested on the Paperwhite 2 |
 | Framework takeover, automatic refresh and autostart | Not applicable to Phase 2.5A |
+
+## Phase 2.5B
+
+| Requirement | Status |
+| --- | --- |
+| Review PW2 framework management, detachment and recovery | Implemented in the extension guide |
+| Device power-key rehearsal, same-boot proof and default opt-out | Tested with simulated input. Physical rehearsal required. |
+| Detached supervisor validates the first PNG before stopping only the framework | Tested with mocked Upstart |
+| Periodic refresh, timeout, cached fallback and full e-ink redraw requests | Tested with loopback HTTP and mocked eips |
+| Clean stop, timed trial, worker error restoration and Home repaint request | Tested with mocked Upstart |
+| Physical full-screen, power-button exit, idle and restore behavior | Planned as a separately approved device test |
+| Updated ZIP, installation guide and recovery procedure | Implemented |
+| Boot hooks, production touch controls, Pomodoro and photos | Not applicable to Phase 2.5B |
 
 ## Later phases
 

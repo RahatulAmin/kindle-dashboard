@@ -67,7 +67,7 @@ For controlled LAN testing, set `APP_HOST` in `.env` to Dashboard NAS’s specif
 
 ## Native Kindle preview via KUAL
 
-The Phase 2.5A extension provides one-shot connectivity and native display tests while the Kindle framework continues running. Download the [KUAL ZIP](kindle-native/rahat-dashboard.zip) and follow the [Windows USB installation, physical test, log collection, and recovery instructions](kindle-native/rahat-dashboard/README.md). The package defaults to `192.0.2.10`. Use Dashboard NAS's current LAN address in `config.sh`; it was `192.0.2.10` during verification.
+The Phase 2.5B KUAL extension starts in one-shot preview mode. Full-screen mode requires a power-button rehearsal on the current boot and a separate manual opt-in. Download the [KUAL ZIP](kindle-native/rahat-dashboard.zip) and follow the [installation, physical verification, and recovery guide](kindle-native/rahat-dashboard/README.md). The package defaults to the verified Dashboard NAS address `192.0.2.10:8765`.
 
 ## Compose deployment
 

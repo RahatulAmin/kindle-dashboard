@@ -28,9 +28,11 @@ The diagnostic at `/kindle/test` remains separate. It can still be used to compa
 
 ## Phase 2.5A native KUAL preview
 
-The Paperwhite 2 is already jailbroken and has KUAL installed. The packaged `rahat-dashboard` extension downloads and validates the test image, then can draw it once with the device's `eips -g` utility while Amazon's interface continues running. An Amazon repaint may cover the image. The NAS test verified the real PNG endpoint and a packaged BusyBox shell download.
+On the physical Paperwhite 2 running 5.12.2, KUAL launched the Phase 2.5A scripts, the device downloaded the PNG from `192.0.2.10:8765`, and `eips -g` displayed it at 758 × 1024. The Amazon interface subsequently repainted over the image.
 
-KUAL launch, the available native utilities, physical image rendering, and Home/power-button recovery still need a device test. The [extension guide](kindle-native/rahat-dashboard/README.md) includes exact USB paths, test steps, and log collection. Framework takeover, refresh loops, and boot startup are outside this package.
+## Phase 2.5B persistent display
+
+The extension starts in safe preview mode. Full-screen mode is gated by a physical power-key rehearsal with the framework running, fresh image validation, and explicit opt-in. The [extension guide](kindle-native/rahat-dashboard/README.md) specifies the manually approved 120-second first test, power-button recovery, and full-screen verification. Local tests simulate Upstart, native drawing, and 32-bit input events. Actual takeover, timed and power-button exit during takeover, and idle behavior are pending on the physical device.
 
 ## Later physical tests
 
