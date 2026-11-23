@@ -95,11 +95,57 @@ bounded() (
     wait "$command_pid"
 )
 
+read_lipc() {
+    command -v lipc-get-prop >/dev/null 2>&1 || return 1
+    bounded 3 lipc-get-prop "$@" 2>/dev/null
+}
+
+request_home_repaint() {
+    log "Framework reports start/running. Waiting for app-manager readiness."
+    if ! command -v lipc-set-prop >/dev/null 2>&1; then
+        log "Home navigation unavailable: lipc-set-prop absent. Visible Home unverified."
+        return
+    fi
+
+    # Probe registration and power state through read-only LIPC. A missing
+    # property leaves a timed fallback for older firmware.
+    attempt=0
+    for pause in 3 5 8 8; do
+        sleep "$pause"
+        attempt=$((attempt + 1))
+        active_app=$(read_lipc com.lab126.appmgrd activeApp) || active_app=
+        power_state=$(read_lipc com.lab126.powerd state) || power_state=
+        log "Home repaint attempt $attempt: activeApp=${active_app:-unavailable}, power=${power_state:-unavailable}."
+        case "$power_state" in
+            screenSaver|readyToSuspend|suspended)
+                log "Home navigation deferred while asleep; wake the Kindle once."
+                continue
+                ;;
+        esac
+        if [ -z "$active_app" ] && [ "$attempt" -lt 2 ]; then
+            log "App-manager readiness unconfirmed; delaying Home navigation."
+            continue
+        fi
+        log "Requesting Home navigation (attempt $attempt)."
+        bounded 4 lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home >/dev/null 2>&1
+        log "Home repaint request exit=$? (0 means accepted, not visibly confirmed)."
+        sleep 2
+        active_app=$(read_lipc com.lab126.appmgrd activeApp) || active_app=
+        log "App-manager after navigation: ${active_app:-unavailable}."
+        if [ "$active_app" = com.lab126.booklet.home ]; then
+            log "App-manager reports Home active. Visible Home unverified."
+            return
+        fi
+    done
+    log "Home navigation window ended. Visible Home unverified; wake once if asleep."
+}
+
 restore_framework() {
     log "Restoring Kindle framework."
     remaining=60
     restore_start=$(uptime_seconds) || restore_start=
     retry=0
+    start_accepted=no
     last_state=
     while [ "$remaining" -gt 0 ]; do
         restore_now=$(uptime_seconds) || restore_now=
@@ -113,11 +159,13 @@ restore_framework() {
             last_state=$state
         fi
         case "$state" in
-            'framework start/running'*) break ;;
-            'framework stop/waiting'*|'')
-                if [ "$retry" -le 0 ]; then
+            'framework start/running'*) request_home_repaint; return 0 ;;
+            'framework stop/waiting'*)
+                if [ "$retry" -le 0 ] && [ "$start_accepted" = no ]; then
                     bounded 4 initctl start --no-wait framework >/dev/null 2>&1
-                    log "Framework start request exit=$?."
+                    start_status=$?
+                    log "Framework start request exit=$start_status."
+                    [ "$start_status" -ne 0 ] || start_accepted=yes
                     retry=5
                 fi
                 ;;
@@ -126,21 +174,26 @@ restore_framework() {
         retry=$((retry - 1))
         remaining=$((remaining - 1))
     done
-    if ! framework_running; then
-        log "Framework did not report running. Use the documented physical restart."
-        return 1
+    if framework_running; then
+        request_home_repaint
+        return 0
     fi
-    log "Framework reports start/running. Requesting Home repaint."
-    if command -v lipc-set-prop >/dev/null 2>&1; then
-        for pause in 2 4; do
-            sleep "$pause"
-            bounded 4 lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home >/dev/null 2>&1
-            log "Home repaint request exit=$? (0 means accepted, not visibly confirmed)."
-        done
-    else
-        log "Home repaint request unavailable: lipc-set-prop absent."
-    fi
-    log "Framework is running. If needed, wake the Kindle to repaint Home."
+    log "Framework did not report running. Use the documented physical restart."
+    return 1
+}
+
+worker_group_live() {
+    kill -0 "-$1" 2>/dev/null || return 1
+    # Ignore zombies left for init to reap. A live descendant can still draw
+    # after the worker shell has exited.
+    wanted_group=$1
+    for process_stat in /proc/[0-9]*/stat; do
+        stat_line=$(cat "$process_stat" 2>/dev/null) || continue
+        set -- ${stat_line##*) }
+        case "$1" in Z|X) continue ;; esac
+        [ "${3:-}" != "$wanted_group" ] || return 0
+    done
+    return 1
 }
 
 terminate_child() {
@@ -165,11 +218,18 @@ terminate_child() {
         kill -KILL "$child" 2>/dev/null || :
     fi
     ticks=2
-    while kill -0 "$child" 2>/dev/null && [ "$ticks" -gt 0 ]; do
+    while [ "$ticks" -gt 0 ]; do
+        if ! kill -0 "$child" 2>/dev/null &&
+            { [ "$group" != yes ] || ! worker_group_live "$child"; }; then
+            break
+        fi
         sleep 1
         ticks=$((ticks - 1))
     done
     kill -0 "$child" 2>/dev/null && return 1
+    if [ "$group" = yes ] && worker_group_live "$child"; then
+        return 1
+    fi
     wait "$child" 2>/dev/null || :
 }
 
@@ -178,9 +238,29 @@ session_cleanup() {
     trap '' HUP INT TERM
     log "Supervisor $$ terminating: $EXIT_REASON (exit=$status, restore=$RESTORE)."
     worker_ended=yes
-    terminate_child "$WORKER" yes || worker_ended=no
+    if [ -n "$WORKER" ]; then
+        rm -f "$JOB/worker-allowed"
+        log "Revoked dashboard drawing; terminating worker group $WORKER."
+        if terminate_child "$WORKER" yes; then
+            log "Dashboard worker group $WORKER is quiescent."
+        else
+            worker_ended=no
+            log "Could not confirm worker group $WORKER stopped; skipping the recovery clear."
+        fi
+    fi
     terminate_child "$MONITOR" no || log "Power monitor did not exit within the cleanup budget."
     if [ "$RESTORE" = yes ]; then
+        # Clear the latched dashboard image only before starting Amazon's UI.
+        # Never clear/reflash its framebuffer after a start request.
+        if [ -n "$WORKER" ] && [ "$worker_ended" = yes ] && framework_stopped; then
+            log "Clearing dashboard frame with eips -c while framework is stopped."
+            bounded 4 eips -c >/dev/null 2>&1
+            clear_status=$?
+            log "Pre-start screen clear exit=$clear_status."
+            [ "$clear_status" -ne 0 ] || sleep 1
+        else
+            log "Pre-start screen clear skipped: no quiescent draw or framework already active."
+        fi
         restore_framework || log "Automatic framework restoration did not complete."
     fi
     if [ "$worker_ended" = yes ]; then

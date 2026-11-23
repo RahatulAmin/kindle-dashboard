@@ -69,7 +69,7 @@ def extension(tmp_path, monkeypatch):
     if not shutil.which("curl"):
         pytest.skip("curl is unavailable")
     ext = tmp_path / "extension with spaces"
-    shutil.copytree(EXT, ext, ignore=shutil.ignore_patterns("state", "config.sh"))
+    shutil.copytree(EXT, ext, ignore=shutil.ignore_patterns("state", "config.sh", "extensions"))
     tools = tmp_path / "tools"
     tools.mkdir()
     monkeypatch.setenv("PATH", str(tools) + ":" + os.environ["PATH"])
@@ -232,12 +232,19 @@ def fullscreen(extension, monkeypatch, tmp_path):
     home = tmp_path / "home-calls"
     draws = tmp_path / "draws"
     fail_draw = tmp_path / "fail-draw"
+    events = tmp_path / "handoff-events"
+    power = tmp_path / "power"
+    power.write_text("active")
+    slow_draw = tmp_path / "slow-draw"
     for var, path in {
         "FRAMEWORK": framework,
         "FRAMEWORK_CALLS": calls,
         "HOME_CALLS": home,
         "DRAWS": draws,
         "FAIL_DRAW": fail_draw,
+        "EVENTS": events,
+        "POWER": power,
+        "SLOW_DRAW": slow_draw,
         "FRAME": state / "last-good.png",
     }.items():
         monkeypatch.setenv(var, str(path))
@@ -252,6 +259,7 @@ case "$*" in
         printf stop/waiting > "$FRAMEWORK" ;;
     'start --no-wait framework')
         echo start >> "$FRAMEWORK_CALLS"
+        echo start >> "$EVENTS"
         printf start/running > "$FRAMEWORK" ;;
     *) exit 11 ;;
 esac
@@ -261,17 +269,41 @@ esac
         """#!/bin/sh
 [ "$*" = 'com.lab126.appmgrd start app://com.lab126.booklet.home' ] || exit 12
 echo home >> "$HOME_CALLS"
+echo home >> "$EVENTS"
 """
     )
+    (tools / "lipc-get-prop").write_text(
+        """#!/bin/sh
+case "$*" in
+    'com.lab126.powerd state') cat "$POWER" ;;
+    'com.lab126.appmgrd activeApp')
+        if [ -f "$HOME_CALLS" ] && [ "$(wc -l < "$HOME_CALLS")" -ge 2 ]; then
+            echo com.lab126.booklet.home
+        else
+            echo com.lab126.booklet.reader
+        fi ;;
+    *) exit 16 ;;
+esac
+"""
+    )
+    (tools / "lipc-get-prop").chmod(0o755)
     (tools / "eips").write_text(
         """#!/bin/sh
-[ "$(cat "$FRAMEWORK")" = stop/waiting ] || exit 13
+[ "$(cat "$FRAMEWORK")" = stop/waiting ] || { echo draw-while-running >> "$EVENTS"; exit 13; }
+if [ "$*" = -c ]; then
+    echo clear >> "$EVENTS"
+    exit 0
+fi
 [ ! -f "$FAIL_DRAW" ] || exit 14
+echo draw >> "$EVENTS"
 case "$*" in
     '-f -g '*) echo full >> "$DRAWS" ;;
     '-g '*) echo partial >> "$DRAWS" ;;
     *) exit 15 ;;
 esac
+if [ -f "$SLOW_DRAW" ]; then
+    exec /bin/sleep 30
+fi
 """
     )
     (tools / "sleep").write_text(
@@ -321,6 +353,7 @@ esac
             "ext": extension, "state": state, "framework": framework, "calls": calls,
             "home": home, "draws": draws, "fail_draw": fail_draw, "press": press, "clock": clock,
             "rehearse": rehearse, "config": config, "log": log,
+            "events": events, "power": power, "slow_draw": slow_draw,
         }
     finally:
         if claims(state):
@@ -514,7 +547,7 @@ def test_signal_restores_framework_and_reports_home_request_failure(fullscreen, 
     assert test["framework"].read_text() == "start/running"
     assert test["calls"].read_text().splitlines() == ["stop", "start"]
     assert "terminating: signal TERM" in test["log"]()
-    assert test["log"]().count("Home repaint request exit=5") == 2
+    assert test["log"]().count("Home repaint request exit=5") == 4
 
 
 def test_monitor_exit_triggers_recovery(fullscreen):
@@ -533,3 +566,40 @@ def test_monitor_exit_triggers_recovery(fullscreen):
         wait_for(lambda: not claims(test["state"]))
     assert test["calls"].read_text().splitlines() == ["stop", "start"]
     assert "terminating: power monitor exited" in test["log"]()
+
+
+def test_recovery_stops_inflight_draw_and_clears_only_before_framework_start(fullscreen):
+    test = fullscreen
+    test["rehearse"]()
+    test["slow_draw"].touch()
+    with server(render_png(Settings(_env_file=None))) as url:
+        test["config"](url)
+        run(test["ext"], "start.sh")
+        wait_for(lambda: test["draws"].exists())
+        test["press"]()
+        wait_for(lambda: not claims(test["state"]))
+
+    assert test["events"].read_text().splitlines() == ["draw", "clear", "start", "home", "home"]
+    log = test["log"]()
+    assert log.index("is quiescent") < log.index("Clearing dashboard frame") < log.index("Framework start request")
+    assert "App-manager reports Home active. Visible Home unverified." in log
+
+
+def test_recovery_reuses_running_framework_and_waits_for_wake(fullscreen):
+    test = fullscreen
+    test["rehearse"]()
+    with server(render_png(Settings(_env_file=None))) as url:
+        test["config"](url)
+        run(test["ext"], "start.sh")
+        wait_for(lambda: test["draws"].exists())
+        test["power"].write_text("screenSaver")
+        test["framework"].write_text("start/running")
+        test["press"]()
+        wait_for(lambda: "Home navigation deferred while asleep" in test["log"]())
+        assert not test["home"].exists()
+        test["power"].write_text("active")
+        wait_for(lambda: not claims(test["state"]))
+
+    assert test["calls"].read_text().splitlines() == ["stop"]
+    assert test["events"].read_text().splitlines() == ["draw", "home", "home"]
+    assert "Visible Home unverified." in test["log"]()

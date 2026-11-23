@@ -39,3 +39,7 @@ The extension starts in safe preview mode. Full-screen mode is gated by a physic
 ## Later physical tests
 
 During Pomodoro development, measure refresh behavior across active, paused and resumed states and look for e-ink ghosting. The timer will use server timestamps independently of display refreshes. Verify TLS and cookie support before releasing authenticated device controls. If the browser cannot meet the requirements, evaluate an optional native client. Any device modification requires a separate decision.
+
+### Phase 2.5B Home repaint follow-up
+
+The physical log confirms KEY_POWER during takeover, the supervisor's restore path, Upstart `start/running`, two accepted Home requests, and claim release. Home visibility still failed the physical check. The updated handoff makes a single pre-start e-ink clear after quiescing the dashboard worker, then observes app-manager readiness and stock power state. Its logs separate framework, navigation and visible-screen results. The [controlled retest](kindle-native/rahat-dashboard/README.md#first-full-screen-test-manual-approval) checks short-press and timed recovery separately, including wake if needed.

@@ -71,3 +71,9 @@ The first physical takeover displayed the dashboard. The user reported that a sh
 | Packaging | Reproducible ZIP and all five absolute KUAL menu commands verified. Preview defaults to disabled takeover. Full-screen operation is restricted to 120-second sessions. |
 | Physical retest | Pending for power-button and timed recovery. The guide asks for separate trials and visible Home verification. |
 | NAS | No application or database changes. |
+
+### Phase 2.5B Home repaint handoff
+
+On the physical PW2, the previous build detected KEY_POWER, restarted the framework, received two successful LIPC request statuses, and released the session claim. Home still did not visibly repaint.
+
+The updated package passed all 42 backend and native tests. Tests interrupt an in-flight mock draw and verify draw → clear → start → Home ordering. They also verify that an already-running framework is reused, a reported sleeping Kindle defers navigation, user-storage loss does not block recovery, and the 120-second fallback remains active. The ZIP integrity check passed. A new physical trial must still verify the visible result.

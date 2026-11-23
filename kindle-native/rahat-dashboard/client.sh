@@ -86,6 +86,9 @@ display() {
     else
         set -- -g "$FRAME"
     fi
+    if [ "$MODE" = worker ] && [ ! -f "$JOB/worker-allowed" ]; then
+        return 1
+    fi
     log "Rendering cached PNG ($1)."
     if ! eips "$@" >> "$LOG" 2>&1; then
         log "Display failed: eips returned an error."
