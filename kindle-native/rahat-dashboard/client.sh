@@ -8,8 +8,6 @@ BASE=$(CDPATH= cd "$(dirname "$0")" && pwd) || exit 1
 STATE="$BASE/state"
 LOG="$STATE/dashboard.log"
 FRAME="$STATE/last-good.png"
-JOB="$STATE/active"
-PART="$JOB/frame.part"
 
 mkdir -p "$STATE" || exit 1
 
@@ -17,11 +15,7 @@ log() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" 2>/dev/null >> "$LOG" || :
 }
 
-cleanup() {
-    rm -f "$PART" "$JOB/cancel" "$JOB/monitor-ready" "$JOB/input-event" \
-        "$JOB/power-pressed" "$JOB/proof" "$JOB/worker-allowed"
-    rmdir "$JOB" 2>/dev/null || :
-}
+. "$BASE/session.sh" || exit 1
 
 cancelled() {
     if [ -f "$JOB/cancel" ]; then
@@ -132,15 +126,14 @@ full_config_valid() {
     done
     [ "$REFRESH_SECONDS" -ge 30 ] && [ "$REFRESH_SECONDS" -le 3600 ] &&
         [ "$FULL_REFRESH_EVERY" -ge 1 ] && [ "$FULL_REFRESH_EVERY" -le 60 ] &&
-        { [ "$SESSION_LIMIT_SECONDS" -eq 0 ] || [ "$SESSION_LIMIT_SECONDS" -ge 60 ]; }
+        [ "$SESSION_LIMIT_SECONDS" -eq 120 ]
 }
 
 MODE=${1:-}
 case "$MODE" in
     stop)
-        if [ -d "$JOB" ] && { : > "$JOB/cancel"; } 2>/dev/null; then
-            log "Stop requested. An in-progress download or restore may take time."
-        else
+        legacy_cleanup || exit 1
+        if ! scan_claims stop; then
             log "No dashboard action running."
         fi
         exit 0
@@ -160,8 +153,8 @@ esac
 
 case "$MODE" in
     start|supervise|worker)
-        if ! full_config_valid; then
-            log "Invalid full-screen settings; see config.sh.example."
+        if [ "$FULLSCREEN_ENABLED" != no ] && ! full_config_valid; then
+            log "Invalid full-screen settings; trials require SESSION_LIMIT_SECONDS=120."
             exit 1
         fi
         ;;
@@ -180,17 +173,20 @@ case "$MODE" in
         ;;
     worker)
         [ "$FULLSCREEN_ENABLED" = yes ] || exit 1
+        JOB=${2:-}
+        case "$JOB" in "$SESSIONS"/*) ;; *) exit 1 ;; esac
+        identity_live "$JOB" || exit 1
+        PART="$JOB/frame.part"
         refresh_loop
         exit $?
         ;;
 esac
 
-if ! mkdir "$JOB" 2>/dev/null; then
-    log "Action skipped: another test is active or left an active marker."
-    exit 1
-fi
-trap cleanup 0
-trap 'exit 1' HUP INT TERM
+# A late detached child must acknowledge its live launcher before claiming a slot.
+case "$MODE" in
+    supervise|rehearse-session) acknowledge_launch "${2:-}" || exit 1 ;;
+esac
+acquire_claim || exit 1
 
 case "$MODE" in
     supervise|rehearse-session) begin_session "$MODE" "$2" ;;

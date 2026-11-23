@@ -3,11 +3,11 @@
     {
       "name": "Rahat Dashboard",
       "items": [
-        {"name": "Test NAS Connection", "action": "./test-connection.sh", "exitmenu": false},
-        {"name": "Test Native Image Display", "action": "./test-display.sh", "exitmenu": true},
-        {"name": "Rehearse Power Button Recovery", "action": "./test-recovery.sh", "exitmenu": false},
-        {"name": "Start Dashboard", "action": "./start.sh", "exitmenu": true},
-        {"name": "Stop / Restore Kindle", "action": "./stop.sh", "exitmenu": false}
+        {"name": "Test NAS Connection", "action": "/bin/sh /mnt/us/extensions/rahat-dashboard/test-connection.sh", "exitmenu": false},
+        {"name": "Test Native Image Display", "action": "/bin/sh /mnt/us/extensions/rahat-dashboard/test-display.sh", "exitmenu": true},
+        {"name": "Rehearse Power Button Recovery", "action": "/bin/sh /mnt/us/extensions/rahat-dashboard/test-recovery.sh", "exitmenu": false},
+        {"name": "Start Dashboard", "action": "/bin/sh /mnt/us/extensions/rahat-dashboard/start.sh", "exitmenu": true},
+        {"name": "Stop / Restore Kindle", "action": "/bin/sh /mnt/us/extensions/rahat-dashboard/stop.sh", "exitmenu": false}
       ]
     }
   ]

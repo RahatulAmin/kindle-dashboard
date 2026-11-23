@@ -9,6 +9,5 @@ IMAGE_PATH='/api/kindle/image.png'
 FULLSCREEN_ENABLED=no
 REFRESH_SECONDS=60
 FULL_REFRESH_EVERY=5
-# First full-screen test restores Home after 120 awake seconds. Set 0 only
-# after the physical full-screen exit and restoration tests have passed.
+# Phase 2.5B only supports a timed 120-second full-screen trial.
 SESSION_LIMIT_SECONDS=120

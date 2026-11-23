@@ -59,7 +59,9 @@ Statuses are **Planned**, **Implemented**, **Tested**, **Blocked**, and **Not ap
 | Detached supervisor validates the first PNG before stopping only the framework | Tested with mocked Upstart |
 | Periodic refresh, timeout, cached fallback and full e-ink redraw requests | Tested with loopback HTTP and mocked eips |
 | Clean stop, timed trial, worker error restoration and Home repaint request | Tested with mocked Upstart |
-| Physical full-screen, power-button exit, idle and restore behavior | Planned as a separately approved device test |
+| Owner-verified stale claim cleanup and failed or late detach handling | Tested locally |
+| Physical full-screen display | Tested. First short power press did not visibly restore Home. |
+| Physical power-button and 120-second timed recovery | Controlled retest pending |
 | Updated ZIP, installation guide and recovery procedure | Implemented |
 | Boot hooks, production touch controls, Pomodoro and photos | Not applicable to Phase 2.5B |
 

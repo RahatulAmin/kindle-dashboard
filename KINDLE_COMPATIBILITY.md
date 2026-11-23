@@ -32,7 +32,9 @@ On the physical Paperwhite 2 running 5.12.2, KUAL launched the Phase 2.5A script
 
 ## Phase 2.5B persistent display
 
-The extension starts in safe preview mode. Full-screen mode is gated by a physical power-key rehearsal with the framework running, fresh image validation, and explicit opt-in. The [extension guide](kindle-native/rahat-dashboard/README.md) specifies the manually approved 120-second first test, power-button recovery, and full-screen verification. Local tests simulate Upstart, native drawing, and 32-bit input events. Actual takeover, timed and power-button exit during takeover, and idle behavior are pending on the physical device.
+Relative KUAL commands failed on the physical Paperwhite 2. The menu now calls `/bin/sh` with an absolute script path under `/mnt/us/extensions/rahat-dashboard/` for all five actions.
+
+The extension starts in safe preview mode. Full-screen mode is gated by a physical power-key rehearsal with the framework running, fresh image validation, and explicit opt-in. The [extension guide](kindle-native/rahat-dashboard/README.md) specifies the manually approved 120-second first test, power-button recovery, and full-screen verification. Local tests simulate Upstart, native drawing, and 32-bit input events. The first physical takeover drew the full-screen dashboard. Rehearsal detected KEY_POWER, but a short press during takeover did not visibly restore Home. An empty legacy marker blocked actions until the Kindle restarted and the marker was renamed. The reported observations do not establish whether takeover saw the event, whether the device slept, or whether Upstart restored the framework without a Home repaint. The recovery update logs those stages independently and requires a controlled 120-second retest.
 
 ## Later physical tests
 

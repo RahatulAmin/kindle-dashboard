@@ -58,3 +58,16 @@ docker compose --env-file .env.example config --quiet
 | ZIP | Validated KUAL XML and JSON, LF and script modes, and the exact eleven runtime files under `extensions/rahat-dashboard/`. |
 | Physical test | The updated recovery rehearsal, framework stop/start, power and timed recovery, and full-refresh behavior remain pending on the actual Kindle. The package defaults to preview and requires a same-boot key rehearsal and explicit opt-in. |
 | NAS | No application code, database, service, package or deployment changes. |
+
+### Phase 2.5B recovery update
+
+The first physical takeover displayed the dashboard. The user reported that a short power press did not visibly restore Home and an empty legacy `state/active` directory blocked later actions. The source investigation found an anonymous legacy lock and unbounded child waits before framework restoration. The available observations cannot identify which step failed during the physical trial.
+
+| Check | Result |
+| --- | --- |
+| Full backend and native suite | 40 passed using temporary databases and mocked Kindle services. |
+| Session ownership and launch | Empty legacy marker removed after checking for a live client. Tests preserve live claims, orphan workers, and unknown files, and clear stale boot or reused-PID claims. Failed and late detached starts acquire no claim. |
+| Recovery | Tests cover a validated initial frame, simulated KEY_POWER, a blocked key read at the 120-second deadline, monitor exit, worker failure, manual stop, supervisor TERM, and storage loss. A simulated Home request failure is logged separately from framework status. |
+| Packaging | Reproducible ZIP and all five absolute KUAL menu commands verified. Preview defaults to disabled takeover. Full-screen operation is restricted to 120-second sessions. |
+| Physical retest | Pending for power-button and timed recovery. The guide asks for separate trials and visible Home verification. |
+| NAS | No application or database changes. |
