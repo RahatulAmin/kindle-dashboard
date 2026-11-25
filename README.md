@@ -6,6 +6,9 @@ A self-hosted productivity dashboard for Dashboard NAS. Administrators manage ta
 
 Phase 3A is complete and physically verified on the Kindle Paperwhite 2. The KOReader plugin provides a 1024 × 758 interactive Todo dashboard with Calendar and Pomodoro previews. Use Todo to complete or reopen shared tasks, with updates synchronized to the web administration interface. The existing portrait TRMNL client continues to work.
 
+Version 0.3.1 adds a Salat times strip above the navigation buttons on Todo, Calendar, and Pomodoro. It shows the five daily prayers in AM/PM format and highlights the next prayer. Schedules are fetched from AlAdhan and cached in SQLite for the current and following months, so cached times stay available during an AlAdhan outage. The strip was verified on a physical Kindle.
+
+- [Salat times release](https://github.com/RahatulAmin/kindle-dashboard/releases/tag/v0.3.1)
 - [Phase 3A release and verified plugin ZIP](https://github.com/RahatulAmin/kindle-dashboard/releases/tag/v0.3.0)
 - [Project roadmap](IMPLEMENTATION_PLAN.md)
 - [Permanent NAS deployment and backups](docs/DEPLOYMENT.md)
@@ -32,7 +35,7 @@ bash scripts/prepare-storage.sh
 
 ## Migrate and create the administrator
 
-For an existing installation, make a verified [SQLite backup](docs/DATABASE.md) and stop the application before upgrading. Revision `0002` adds the Phase 2 tables to the existing database. The setup command and app startup both apply pending migrations.
+For an existing installation, make a verified [SQLite backup](docs/DATABASE.md) and stop the application before upgrading. Revision `0002` adds the Phase 2 tables to the existing database. Revision `0003` adds the prayer preferences and monthly schedule cache. The setup command and app startup both apply pending migrations.
 
 ```bash
 cd /srv/kindle-dashboard/project
@@ -71,6 +74,7 @@ For controlled LAN testing, set `APP_HOST` in `.env` to Dashboard NAS’s specif
 - **Tasks** supports manual position, priority, due date and title sorting, plus status and text filtering.
 - **Deadlines** lists chronological entries. Same-day timed entries precede date-only entries. Countdown is the number of calendar days from today in America/Toronto.
 - **Settings** controls the dashboard title, refresh interval, weather location and Kindle sharing. When sharing is enabled, anyone who can reach the Kindle page can see the selected widget content. The browser diagnostic continues to show its separate test image.
+- **Prayer Times** lets you choose the location, calculation method, Standard or Hanafi Asr, high-latitude rule, and per-prayer adjustments. The dashboard uses America/Toronto time. The strip is disabled by default. To enable it, select an Asr convention, check **Show prayer times on the Kindle**, and save. Use **Refresh schedules** to fetch updated times on demand.
 - **Widgets** controls visibility and order. Tasks and deadlines accept item limits and share the available image space. Pomodoro and NAS status preferences are reserved for later phases.
 - **Weather** defaults to Montréal and caches Open-Meteo conditions for 15 minutes in memory. A failed refresh displays the last successful snapshot if available and retries after one minute. The cache resets on app restart.
 
