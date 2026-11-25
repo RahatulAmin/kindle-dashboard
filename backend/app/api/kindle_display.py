@@ -1,5 +1,9 @@
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from secrets import compare_digest
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 
 from app.models.dashboard import Deadline, Task
 from app.rendering.dashboard import render_dashboard
@@ -9,6 +13,26 @@ from app.services.dashboard import deadline_query, preferences, task_query
 from app.services.weather import Weather
 
 router = APIRouter(include_in_schema=False)
+
+
+@router.get("/api/display")
+def trmnl_display(
+    request: Request,
+    access_token: Annotated[str | None, Header()] = None,
+) -> JSONResponse:
+    configured_token = request.app.state.settings.trmnl_access_token
+    expected = configured_token.get_secret_value() if configured_token else ""
+    if not expected or not access_token or not compare_digest(access_token.encode(), expected.encode()):
+        raise HTTPException(401, "Invalid access token", headers=NO_CACHE)
+
+    return JSONResponse(
+        {
+            "image_url": str(request.url_for("kindle_dashboard_image")),
+            "refresh_rate": 30,
+            "filename": f"dashboard-{uuid4().hex}.png",
+        },
+        headers=NO_CACHE,
+    )
 
 
 @router.get("/kindle")

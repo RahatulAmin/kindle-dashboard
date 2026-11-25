@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     pomodoro_refresh_seconds: PositiveInt = 30
     photo_rotation_seconds: PositiveInt = 600
     idle_timeout_seconds: PositiveInt = 300
+
+    trmnl_access_token: SecretStr | None = None
 
     admin_cookie_secure: bool = True
     admin_session_ttl_seconds: PositiveInt = 28800

@@ -13,3 +13,20 @@ dist/
 
 /kindle-native/rahat-dashboard/config.sh
 /kindle-native/rahat-dashboard/state/
+
+# Local secrets, database snapshots, and extracted Kindle packages.
+/data/
+/logs/
+*.db3
+*.db3-*
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+id_rsa*
+id_ed25519*
+**/apikey.txt
+**/trmnl.lua
+/kindle-native/rahat-dashboard/extensions/
+/kindle-native/rahat-dashboard[0-9]*/
