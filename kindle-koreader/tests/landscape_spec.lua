@@ -17,7 +17,7 @@ end
 local function screenWidth() return mode % 2 == 1 and 512 or 379 end
 local function screenHeight() return mode % 2 == 1 and 379 or 512 end
 local screen = {
-    DEVICE_ROTATED_CLOCKWISE = 1, getWidth = screenWidth, getHeight = screenHeight,
+    DEVICE_ROTATED_COUNTER_CLOCKWISE = 3, getWidth = screenWidth, getHeight = screenHeight,
     getRotationMode = function() return mode end,
     setRotationMode = function(_, target) mode = target end,
     getSize = function() return { w = screenWidth(), h = screenHeight() } end,
@@ -112,7 +112,7 @@ local p = plugin()
 p:fetchAndDisplay()
 assert(p.portrait)
 p:startLandscape()
-assert(mode == 1 and p.landscape_session.frame.page == "todo" and paints == 1)
+assert(mode == 3 and p.landscape_session.frame.page == "todo" and paints == 1)
 p:startAutoRefresh()
 assert(not p.auto_refresh_enabled)
 

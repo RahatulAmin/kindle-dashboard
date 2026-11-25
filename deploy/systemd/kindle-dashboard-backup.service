@@ -1,0 +1,17 @@
+[Unit]
+Description=Verified SQLite backup of Kindle Dashboard
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+WorkingDirectory=@PROJECT@
+EnvironmentFile=@STORAGE@/config/dashboard.env
+Environment=PYTHONPATH=backend
+UMask=0077
+ExecStartPre=/usr/bin/mountpoint -q @MOUNT@
+ExecStart=@PROJECT@/.venv/bin/python -m app.backup_database
+Restart=on-failure
+RestartSec=5min
+NoNewPrivileges=yes
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=30

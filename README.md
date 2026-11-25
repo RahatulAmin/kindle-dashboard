@@ -2,6 +2,13 @@
 
 A self-hosted productivity dashboard for Dashboard NAS. Administrators manage tasks, deadlines, weather location, and widgets in React. FastAPI stores data in SQLite and serves a script-free Kindle page with a grayscale Pillow image. The dashboard can share selected data with the Kindle over a trusted LAN.
 
+## KOReader landscape dashboard
+
+The Phase 3A KOReader plugin provides a 1024 × 758 interactive Todo dashboard with Calendar and Pomodoro previews. Use Todo to complete or reopen shared tasks, with updates synchronized to the web administration interface. The existing portrait TRMNL client continues to work.
+
+- [Permanent NAS deployment and backups](docs/DEPLOYMENT.md)
+- [KOReader plugin ZIP, installation and device checklist](docs/PHASE3A.md)
+
 ## Local installation
 
 Run on Dashboard NAS as the deployment user using the existing Python 3.12 and Node installations.

@@ -1,0 +1,21 @@
+[Unit]
+Description=Kindle Dashboard NAS
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=@PROJECT@
+EnvironmentFile=@STORAGE@/config/dashboard.env
+Environment=PYTHONPATH=backend
+UMask=0077
+ExecStartPre=/usr/bin/mountpoint -q @MOUNT@
+ExecStartPre=@PROJECT@/.venv/bin/python -m app.wait_for_listener
+ExecStart=@PROJECT@/.venv/bin/python -m app
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+[Install]
+WantedBy=default.target

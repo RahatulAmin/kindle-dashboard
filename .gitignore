@@ -15,6 +15,7 @@ dist/
 /kindle-native/rahat-dashboard/state/
 
 # Local secrets, database snapshots, and extracted Kindle packages.
+/config/
 /data/
 /logs/
 *.db3

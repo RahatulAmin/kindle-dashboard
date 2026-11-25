@@ -35,3 +35,24 @@ PY
 ```
 
 For restore, stop the application, preserve the current database and any `-wal`, `-shm`, and `-journal` sidecars together under a separate recovery directory, and copy the verified backup to the configured database path. Start the matching application version and confirm the migration revision and health response. Media will require separate backups when uploads are implemented.
+
+## Scheduled daily backups and restoration
+
+The permanent deployment runs `app.backup_database` through a systemd user timer. The job verifies each SQLite copy, publishes it atomically, and keeps the most recent 14 daily backups. See [deployment management](DEPLOYMENT.md#management-and-backups).
+
+For a timestamped snapshot before a future deployment, run from the checkout:
+
+```bash
+set -a
+. ../config/dashboard.env
+set +a
+umask 077
+PYTHONPATH=backend .venv/bin/python -m app.backup_database --snapshot
+```
+
+To restore:
+
+1. Stop the permanent application, backup service, and timer using the [rollback commands](DEPLOYMENT.md#rollback). Keep the source backup read-only. Run SQLite `PRAGMA integrity_check` on the chosen backup and require the result `ok`.
+2. Move the current database and any SQLite sidecars together into a separate private recovery directory. A previous journal must stay with the database it belongs to.
+3. Copy the verified backup to the configured database path with mode 600 and ownership of the service account. Confirm that its Alembic revision matches the app you will start.
+4. Start the application and backup timer. Check health and verify the expected tasks, deadlines, settings, and administrator login before discarding the recovery copy.

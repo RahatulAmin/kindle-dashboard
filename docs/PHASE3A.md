@@ -28,7 +28,7 @@ There is no schema migration in Phase 3A. The live database and Kindle installat
 2. In the test checkout, set `APP_HOST` to the NAS’s private IPv4 address, `APP_PORT` to the test port, `DATABASE_PATH` to the separate SQLite path, and `TRMNL_ACCESS_TOKEN` to the test key in the checkout’s private `.env`. Start FastAPI normally. Use the admin interface or the fixture below to enable Kindle sharing and seed the test database.
 3. On a computer, back up the working `koreader/plugins/trmnl.koplugin/` folder, including any local `apikey.txt`, and a copy of `koreader/settings/trmnl.lua` if present. Close KOReader before copying. Move the stable plugin outside `koreader/plugins/` so KOReader loads only one TRMNL plugin.
 4. Extract the ZIP into `koreader/plugins/`. The installed folder is `koreader/plugins/trmnl.koplugin/`. Keep any file-based stable key in the backup during the staging test, since upstream reads `apikey.txt` on startup and gives it precedence over the saved API key.
-5. Start KOReader. In **Tools → TRMNL Display → Configure TRMNL**, enter the test key and the test Base URL, in the form `http://<private-LAN-IPv4>:8766`. Select **Start interactive landscape dashboard** from the TRMNL menu. It starts on Todo and refreshes every 30 seconds. Long-press the frame to return to KOReader. If the first fetch fails before a frame opens, use **Stop interactive landscape dashboard**.
+5. Start KOReader. In **Tools → TRMNL Display → Configure TRMNL**, enter the test key and the test Base URL, in the form `http://<private-LAN-IPv4>:8766`. Select **Start interactive landscape dashboard** from the TRMNL menu. It starts on Todo, uses counterclockwise landscape from portrait, and refreshes every 30 seconds. Long-press the frame to return to KOReader. If the first fetch fails before a frame opens, use **Stop interactive landscape dashboard**.
 6. To roll back, exit the dashboard and KOReader, remove the test plugin folder, restore the backed-up plugin folder and settings, then restart KOReader. Stop the isolated NAS test process.
 
 ### Optional synthetic fixture
@@ -73,7 +73,7 @@ The interactive mode accepts a private IPv4 HTTP Base URL and does not follow re
 - [ ] Edit or hide an item in admin while its old frame is visible. Tap the old checkbox and verify it cannot change the updated or hidden item. Confirm synchronization after refresh.
 - [ ] Leave Calendar visible through two refresh cycles. Confirm the page stays selected, the clock updates, and no update pop-ups appear.
 - [ ] Stop the staging server after a frame is visible. Confirm failed taps and refreshes retain the last frame. Restart staging and confirm refresh resumes.
-- [ ] Verify frontlight controls and the physical power button. Suspend, wake, and confirm the dashboard remains responsive. Long-press to exit and verify the prior orientation and normal KOReader navigation.
+- [ ] With KOReader Keep alive disabled, verify frontlight controls and the physical power button. Suspend, wake, and confirm the dashboard remains responsive. Long-press to exit and verify the prior orientation and normal KOReader navigation.
 - [ ] Restore the stable plugin and settings. Confirm the stable portrait dashboard still opens and refreshes.
 
 ## Automated verification

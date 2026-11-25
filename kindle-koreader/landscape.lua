@@ -171,7 +171,7 @@ local function fetch(plugin, session, page, number, change)
                 session.rotation = Screen:getRotationMode()
             end
             if Screen:getWidth() < Screen:getHeight() then
-                rotate(plugin, Screen.DEVICE_ROTATED_CLOCKWISE)
+                rotate(plugin, Screen.DEVICE_ROTATED_COUNTER_CLOCKWISE)
             end
             local function handleTap(widget, gesture)
                 if session.frame ~= frame or session.widget ~= widget or not gesture or not gesture.pos or
