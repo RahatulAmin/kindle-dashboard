@@ -17,7 +17,7 @@ from app.models.dashboard import Task
 from app.rendering.kindle import NO_CACHE
 from app.rendering.landscape import TaskRow, render_landscape
 from app.rendering.landscape_layout import (
-    HEIGHT, NEXT, PAGE_SIZE, PREVIOUS, TABS, WIDTH, Page, row_box, tab_box,
+    HEIGHT, PAGE_SIZE, TABS, WIDTH, Page, pagination_controls, row_box, tab_box,
 )
 from app.schemas.dashboard import InputModel
 from app.services.auth import DB
@@ -94,9 +94,8 @@ def landscape_frame(request: Request, db: DB, page: Page = "todo",
                 **asdict(row_box(index)), "action": "complete", "task_id": task.id,
                 "completed": not task.completed, "capability": capability(key, task, frame_id, expires),
             })
-        for box, target in ((PREVIOUS, page_number - 1), (NEXT, page_number + 1)):
-            if 1 <= target <= page_count:
-                regions.append({**asdict(box), "action": "navigate", "page": page, "number": target})
+        for target, hit, _, _ in pagination_controls(page_number, page_count):
+            regions.append({**asdict(hit), "action": "navigate", "page": page, "number": target})
     db.rollback()
     weather = Weather("unavailable")
     if any(widget.key == "weather" and widget.visible for widget in config.widgets):

@@ -25,14 +25,14 @@ def main():
     ]
     mixed = [tasks[0], TaskRow(tasks[1].title, completed=True), tasks[2],
              TaskRow(tasks[3].title, completed=True, priority="low"), *tasks[4:]]
-    for name, page, rows, count in [
-        ("todo", "todo", tasks, 2),
-        ("calendar", "calendar", [], 1),
-        ("pomodoro", "pomodoro", [], 1),
-        ("todo-mixed", "todo", mixed, 1),
+    for name, page, rows, number, count in [
+        ("todo", "todo", tasks, 1, 2),
+        ("calendar", "calendar", [], 1, 1),
+        ("pomodoro", "pomodoro", [], 1, 1),
+        ("todo-mixed", "todo", mixed, 2, 3),
     ]:
         (output / f"{name}.png").write_bytes(
-            render_landscape(page, now, "Montréal, Québec", weather, rows, page_count=count)
+            render_landscape(page, now, "Montréal, Québec", weather, rows, page_number=number, page_count=count)
         )
 
 

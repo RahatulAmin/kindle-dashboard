@@ -9,8 +9,8 @@ from PIL import Image, ImageDraw
 from app.rendering.dashboard import fit_line
 from app.rendering.landscape_layout import (
     CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, HEIGHT, LEFT, MAIN_CENTER, NAV_Y,
-    NEXT, PANEL_CENTER, PANEL_INSET, PANEL_TEXT_WIDTH, PANEL_X, PREVIOUS, RIGHT,
-    TABS, TAB_LABELS, TASK_TEXT_X, WEATHER_ICON_Y, WIDTH, Page, row_box, tab_box,
+    PANEL_CENTER, PANEL_INSET, PANEL_TEXT_WIDTH, PANEL_X, RIGHT,
+    TABS, TAB_LABELS, TASK_TEXT_X, WEATHER_ICON_Y, WIDTH, Page, pagination_controls, row_box, tab_box,
 )
 from app.rendering.typography import font
 from app.services.dashboard import TORONTO
@@ -169,12 +169,18 @@ def todo(draw, tasks, page_number, page_count):
     if not tasks:
         label(draw, (MAIN_CENTER, 344), "No tasks to display", 30, "Medium", anchor="ms")
     if page_count > 1:
-        label(draw, (MAIN_CENTER, 643), f"{page_number} of {page_count}", 18,
+        label(draw, (MAIN_CENTER, 626), f"{page_number} of {page_count}", 18,
               "Medium", SECONDARY, "ms")
-        for box, enabled, text in ((PREVIOUS, page_number > 1, "‹  Previous"),
-                                   (NEXT, page_number < page_count, "Next  ›")):
-            if enabled:
-                label(draw, (box.x+box.w//2, 643), text, 19, "Medium", anchor="ms")
+        for target, _, box, text in pagination_controls(page_number, page_count):
+            draw.rounded_rectangle(box.bounds, radius=8, outline=INK, width=2)
+            center_x, center_y = box.x + box.w // 2, box.y + box.h // 2
+            previous = target < page_number
+            label(draw, (center_x + (10 if previous else -10), center_y + 8),
+                  text, 22, "Bold", anchor="ms")
+            arrow = center_x + (-59 if previous else 35)
+            direction = -1 if previous else 1
+            draw.polygon((arrow + 5 * direction, center_y, arrow - 4 * direction, center_y - 6,
+                          arrow - 4 * direction, center_y + 6), fill=INK)
 
 
 def render_landscape(page: Page, now: datetime, location: str, weather: Weather,

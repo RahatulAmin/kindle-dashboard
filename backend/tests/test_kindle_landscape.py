@@ -17,7 +17,7 @@ from app.rendering.dashboard import fit_line
 from app.rendering.landscape import clock_size, date_clock, render_landscape, temperature
 from app.rendering.landscape_layout import (
     CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, NAV_Y, NEXT, PAGE_SIZE, PANEL_CENTER,
-    PANEL_X, PREVIOUS, RIGHT, TASK_TEXT_X, WIDTH, row_box, tab_box,
+    PANEL_X, PREVIOUS, RIGHT, TASK_TEXT_X, WIDTH, pagination_controls, row_box, tab_box,
 )
 from app.rendering.typography import font
 from app.schemas.dashboard import Preferences
@@ -302,4 +302,21 @@ def test_pagination_targets_fit_reduced_main_area(dashboard):
         control = controls[0]
         assert (control["x"], control["y"], control["w"], control["h"]) == (box.x, box.y, box.w, box.h)
         assert control["number"] == target
-        assert box.x + box.w <= RIGHT and box.y + box.h <= NAV_Y
+        assert box.x + box.w <= RIGHT and box.y + box.h < NAV_Y
+        assert value["number"] == frame(dashboard, number=current)["number"]
+
+
+def test_pagination_footer_has_clearance_and_tap_padding():
+    controls = list(pagination_controls(2, 3))
+    assert [target for target, _, _, _ in controls] == [1, 3]
+    preview = image(render_landscape("todo", NOW, "Montréal", UNAVAILABLE, page_number=2, page_count=3))
+    for _, hit, visible, _ in controls:
+        assert hit.w >= 180 and hit.h >= 76
+        assert hit.y > row_box(PAGE_SIZE - 1).bounds[3]
+        assert hit.bounds[3] < NAV_Y
+        assert visible.x - hit.x == visible.y - hit.y == 12
+        assert hit.bounds[2] - visible.bounds[2] == hit.bounds[3] - visible.bounds[3] == 12
+        center = visible.x + visible.w // 2
+        assert preview.getpixel((center, visible.y)) == 0
+        assert preview.getpixel((center, hit.y)) == 255
+    assert controls[1][1].x - controls[0][1].bounds[2] > 150
