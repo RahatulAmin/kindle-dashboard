@@ -57,3 +57,19 @@ class Deadline(Entry, Base):
     due_date: Mapped[date] = mapped_column(Date, index=True)
     due_time: Mapped[time | None] = mapped_column(Time)
     archived: Mapped[bool]
+
+
+class PrayerSettings(Base):
+    __tablename__ = "prayer_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    preferences: Mapped[dict] = mapped_column(JSON)
+
+
+class PrayerMonth(Base):
+    __tablename__ = "prayer_month"
+
+    calculation: Mapped[str] = mapped_column(String(64), primary_key=True)
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    days: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[str] = mapped_column(String(40))

@@ -7,6 +7,7 @@ export const pages = {
   pomodoro: 'Pomodoro',
   photos: 'Photo Library',
   display: 'Display',
+  'prayer-times': 'Prayer Times',
   settings: 'Settings',
   widgets: 'Widgets',
 } as const

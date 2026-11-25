@@ -13,12 +13,14 @@ from app.api.kindle_landscape import router as landscape_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.health import router as health_router
+from app.api.v1.prayer_times import router as prayer_router
 from app.core.config import ROOT, Settings
 from app.core.logging import configure_logging, logger
 from app.db.database import Database
 from app.rendering.kindle import router as kindle_router
 from app.schemas.api import APIError, ErrorResponse
 from app.services.auth import LoginLimiter
+from app.services.prayer_times import PrayerCache
 from app.services.weather import WeatherCache
 
 
@@ -54,10 +56,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.landscape_signing_key = token_bytes(32)
     app.state.login_limiter = LoginLimiter()
     app.state.weather = WeatherCache()
+    app.state.prayers = PrayerCache()
     app.state.kindle_diagnostic_last_press = None
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(dashboard_router)
+    app.include_router(prayer_router)
     app.include_router(kindle_router)
     app.include_router(display_router)
     app.include_router(landscape_router)

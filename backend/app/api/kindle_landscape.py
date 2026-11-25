@@ -7,7 +7,7 @@ from time import time
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import Field, StrictBool
 from sqlalchemy import func, select
@@ -17,11 +17,12 @@ from app.models.dashboard import Task
 from app.rendering.kindle import NO_CACHE
 from app.rendering.landscape import TaskRow, render_landscape
 from app.rendering.landscape_layout import (
-    HEIGHT, PAGE_SIZE, TABS, WIDTH, Page, pagination_controls, row_box, tab_box,
+    HEIGHT, TABS, WIDTH, Page, pagination_controls, row_box, tab_box, task_page_size,
 )
 from app.schemas.dashboard import InputModel
 from app.services.auth import DB
 from app.services.dashboard import preferences, task_query
+from app.services.prayer_times import prayer_day, prayer_preferences
 from app.services.weather import Weather
 
 router = APIRouter(prefix="/api/kindle/landscape", dependencies=[Depends(require_device)])
@@ -66,13 +67,17 @@ def validate_capability(key, change, task_id):
 
 
 @router.get("/frame")
-def landscape_frame(request: Request, db: DB, page: Page = "todo",
+def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page: Page = "todo",
                     number: Annotated[int, Query(ge=1, le=2_147_483_647)] = 1,
                     battery: Annotated[int | None, Header(alias="percent-charged", ge=0, le=100)] = None,
                     wifi: Annotated[str | None, Header(alias="dashboard-wifi")] = None):
     # Keep the count and rows on one SQLite read snapshot, then release it before weather and drawing.
     db.connection().exec_driver_sql("BEGIN")
     config = sharing(db)
+    now = datetime.now(UTC)
+    salat = prayer_preferences(db)
+    prayers = prayer_day(db, salat, now) if salat.enabled else None
+    page_size = task_page_size(salat.enabled)
     frame_id = uuid4().hex
     expires = int(time()) + FRAME_LIFETIME
     key = request.app.state.landscape_signing_key
@@ -85,23 +90,25 @@ def landscape_frame(request: Request, db: DB, page: Page = "todo",
     if page == "todo" and todo_enabled(config):
         visible = Task.kindle_visible.is_(True)
         count = db.scalar(select(func.count()).select_from(Task).where(visible))
-        page_count = max(1, (count + PAGE_SIZE - 1) // PAGE_SIZE)
+        page_count = max(1, (count + page_size - 1) // page_size)
         page_number = min(number, page_count)
-        query = task_query().where(visible).offset((page_number - 1) * PAGE_SIZE).limit(PAGE_SIZE)
+        query = task_query().where(visible).offset((page_number - 1) * page_size).limit(page_size)
         for index, task in enumerate(db.scalars(query)):
             tasks.append(TaskRow(task.title, task.completed, task.priority, task.due_date))
             regions.append({
                 **asdict(row_box(index)), "action": "complete", "task_id": task.id,
                 "completed": not task.completed, "capability": capability(key, task, frame_id, expires),
             })
-        for target, hit, _, _ in pagination_controls(page_number, page_count):
+        for target, hit, _, _ in pagination_controls(page_number, page_count, salat.enabled):
             regions.append({**asdict(hit), "action": "navigate", "page": page, "number": target})
     db.rollback()
+    if salat.enabled:
+        background.add_task(request.app.state.prayers.refresh, request.app.state.database, salat, now)
     weather = Weather("unavailable")
     if any(widget.key == "weather" and widget.visible for widget in config.widgets):
         weather = request.app.state.weather.get(config.weather)
-    png = render_landscape(page, datetime.now(UTC), config.weather.name, weather, tasks,
-                           page_number, page_count, battery=battery, wifi=wifi == "connected")
+    png = render_landscape(page, now, config.weather.name, weather, tasks,
+                           page_number, page_count, battery=battery, wifi=wifi == "connected", prayers=prayers)
     return JSONResponse({
         "filename": f"landscape-{frame_id}.png", "width": WIDTH, "height": HEIGHT,
         "refresh_rate": REFRESH_SECONDS, "page": page, "number": page_number,

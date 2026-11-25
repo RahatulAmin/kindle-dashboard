@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { AdminShell, pages, type Page } from './layouts/AdminShell'
 import { Entries } from './pages/Entries'
 import { Overview } from './pages/Overview'
+import { PrayerTimes } from './pages/PrayerTimes'
 import { Display, PreferencesPage } from './pages/Preferences'
 import { SignIn } from './pages/SignIn'
 import { api, errorMessage, useResource, type Identity, type Session } from './services/admin'
@@ -26,6 +27,7 @@ function Content({ page, token }: { page: Page; token: string }) {
     case 'settings':
     case 'widgets': return <PreferencesPage key={page} widgets={page === 'widgets'} token={token} />
     case 'display': return <Display />
+    case 'prayer-times': return <PrayerTimes token={token} />
     default: return <>
       <h1 className="page-title">{pages[page]}</h1>
       <p className="panel mt-5">This section is planned for a later phase.</p>
