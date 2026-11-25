@@ -14,8 +14,11 @@ from app.core.config import ROOT, Settings
 from app.main import create_app
 from app.models.dashboard import Task
 from app.rendering.dashboard import fit_line
-from app.rendering.landscape import date_clock, render_landscape, temperature
-from app.rendering.landscape_layout import PAGE_SIZE, row_box, tab_box
+from app.rendering.landscape import clock_size, date_clock, render_landscape, temperature
+from app.rendering.landscape_layout import (
+    CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, NAV_Y, NEXT, PAGE_SIZE, PANEL_CENTER,
+    PANEL_X, PREVIOUS, RIGHT, TASK_TEXT_X, WIDTH, row_box, tab_box,
+)
 from app.rendering.typography import font
 from app.schemas.dashboard import Preferences
 from app.services.dashboard import save_preferences
@@ -91,9 +94,9 @@ def test_unicode_long_titles_negative_zero_and_empty_weather():
         face = font(24, weight)
         assert bytes(face.getmask("é")) != bytes(face.getmask("e"))
         assert face.getname()[1] == weight
-    title = fit_line(draw, "Montréal Québec " * 28, font(24, "Medium"), 536)
+    title = fit_line(draw, "Montréal Québec " * 28, font(24, "Medium"), RIGHT - TASK_TEXT_X)
     assert title.startswith("Montréal Québec") and title.endswith("…")
-    assert draw.textlength(title, font=font(24, "Medium")) <= 536
+    assert draw.textlength(title, font=font(24, "Medium")) <= RIGHT - TASK_TEXT_X
     assert temperature(-0.1) == temperature(-0.0) == "0°"
     assert temperature(-5) == "−5°"
     empty = image(render_landscape("todo", NOW, "Montréal, Québec", UNAVAILABLE))
@@ -102,7 +105,7 @@ def test_unicode_long_titles_negative_zero_and_empty_weather():
     assert empty.mode == "L" and empty.size == (1024, 758)
     assert empty.crop((180, 318, 520, 350)).getextrema()[0] == 0
     assert empty.crop((720, 325, 1000, 615)).tobytes() != fresh.crop((720, 325, 1000, 615)).tobytes()
-    assert fresh.crop((720, 566, 1000, 600)).tobytes() != stale.crop((720, 566, 1000, 600)).tobytes()
+    assert fresh.crop((720, 585, 1000, 612)).tobytes() != stale.crop((720, 585, 1000, 612)).tobytes()
 
 
 def test_frame_png_navigation_pagination_and_completed_style(dashboard):
@@ -269,3 +272,34 @@ def test_checked_task_syncs_with_the_admin_api(dashboard):
     csrf = {"X-CSRF-Token": login.json()["data"]["csrf_token"]}
     assert dashboard.put(f"/api/v1/tasks/{row['id']}", json=payload, headers=csrf).status_code == 200
     assert tasks(frame(dashboard))[0]["completed"] is True
+
+
+def test_clock_first_panel_fits_and_matches_across_pages():
+    draw = ImageDraw.Draw(Image.new("L", (WIDTH, NAV_Y)))
+    assert 0.37 < (WIDTH - PANEL_X) / WIDTH < 0.39
+    sizes = {time: clock_size(draw, time) for time in ("9:59", "12:00")}
+    assert 100 <= sizes["12:00"] < sizes["9:59"] <= 112
+    for time, size in sizes.items():
+        bounds = draw.textbbox((PANEL_CENTER, 145), time, font=font(size, "Bold"), anchor="ms")
+        assert bounds[0] >= PANEL_CENTER - CLOCK_WIDTH // 2
+        assert bounds[2] <= PANEL_CENTER + CLOCK_WIDTH // 2
+        assert bounds[1] > 38 and bounds[3] < CLOCK_DIVIDER_Y
+    panels = [
+        image(render_landscape(page, NOW, "Montréal", UNAVAILABLE)).crop((PANEL_X, 0, WIDTH, NAV_Y))
+        for page in ("todo", "calendar", "pomodoro")
+    ]
+    assert panels[0].tobytes() == panels[1].tobytes() == panels[2].tobytes()
+    for y in (CLOCK_DIVIDER_Y, DATE_DIVIDER_Y):
+        assert panels[0].getpixel((PANEL_CENTER - PANEL_X, y)) == 195
+
+
+def test_pagination_targets_fit_reduced_main_area(dashboard):
+    for current, box, target in ((1, NEXT, 2), (2, PREVIOUS, 1)):
+        value = frame(dashboard, number=current)
+        controls = [region for region in value["regions"] if region["y"] < NAV_Y
+                    and region["action"] == "navigate"]
+        assert len(controls) == 1
+        control = controls[0]
+        assert (control["x"], control["y"], control["w"], control["h"]) == (box.x, box.y, box.w, box.h)
+        assert control["number"] == target
+        assert box.x + box.w <= RIGHT and box.y + box.h <= NAV_Y

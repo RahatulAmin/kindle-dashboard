@@ -8,15 +8,15 @@ from PIL import Image, ImageDraw
 
 from app.rendering.dashboard import fit_line
 from app.rendering.landscape_layout import (
-    HEIGHT, LEFT, NAV_Y, NEXT, PANEL_X, PREVIOUS, RIGHT, TABS, TAB_LABELS, WIDTH,
-    Page, row_box, tab_box,
+    CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, HEIGHT, LEFT, MAIN_CENTER, NAV_Y,
+    NEXT, PANEL_CENTER, PANEL_INSET, PANEL_TEXT_WIDTH, PANEL_X, PREVIOUS, RIGHT,
+    TABS, TAB_LABELS, TASK_TEXT_X, WEATHER_ICON_Y, WIDTH, Page, row_box, tab_box,
 )
 from app.rendering.typography import font
 from app.services.dashboard import TORONTO
 from app.services.weather import Weather
 
 INK, SECONDARY, RULE = 0, 75, 195
-CENTER = (PANEL_X + WIDTH) // 2
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def icon(draw, name, cx, cy, ink=INK):
 
 
 def weather_icon(draw, condition: str | None):
-    x, y = CENTER, 368
+    x, y = PANEL_CENTER, WEATHER_ICON_Y
     name = (condition or "").lower()
     clear = "clear" in name
     partly = "partly" in name
@@ -112,26 +112,35 @@ def device_indicators(draw, battery, wifi):
             draw.rectangle((977, 20, 976+fill, 27), fill=INK)
 
 
+def clock_size(draw, time):
+    size = 112
+    while draw.textlength(time, font=font(size, "Bold")) > CLOCK_WIDTH:
+        size -= 1
+    return size
+
+
 def information(draw, now, location, weather):
     day, month, weekday, time, meridiem = date_clock(now)
-    inline(draw, CENTER, 136, day, month, 82, 35)
-    label(draw, (CENTER, 180), weekday, 27, "Medium", SECONDARY, "ms")
-    inline(draw, CENTER, 265, time, meridiem, 63, 24)
-    draw.line((PANEL_X+36, 306, WIDTH-36, 306), fill=RULE)
+    label(draw, (PANEL_CENTER, 145), time, clock_size(draw, time), "Bold", anchor="ms")
+    label(draw, (PANEL_CENTER, 183), meridiem, 27, "Medium", anchor="ms")
+    inline(draw, PANEL_CENTER, 309, day, month, 82, 35)
+    label(draw, (PANEL_CENTER, 349), weekday, 27, "Medium", SECONDARY, "ms")
+    for y in (CLOCK_DIVIDER_Y, DATE_DIVIDER_Y):
+        draw.line((PANEL_X + PANEL_INSET, y, WIDTH - PANEL_INSET, y), fill=RULE)
     weather_icon(draw, weather.condition if weather.temperature is not None else None)
     if weather.temperature is None:
-        label(draw, (CENTER, 457), "Weather unavailable", 24, "Medium", SECONDARY, "ms")
+        label(draw, (PANEL_CENTER, 516), "Weather unavailable", 24, "Medium", SECONDARY, "ms")
     else:
-        label(draw, (CENTER, 482), temperature(weather.temperature) + "C", 69, "Bold", anchor="ms")
-        condition = fit_line(draw, weather.condition or "Unknown", font(23), WIDTH-PANEL_X-48)
-        label(draw, (CENTER, 520), condition, 23, anchor="ms")
+        label(draw, (PANEL_CENTER, 508), temperature(weather.temperature) + "C", 58, "Bold", anchor="ms")
+        condition = fit_line(draw, weather.condition or "Unknown", font(23), PANEL_TEXT_WIDTH)
+        label(draw, (PANEL_CENTER, 543), condition, 23, anchor="ms")
         if weather.high is not None and weather.low is not None:
-            label(draw, (CENTER, 557), f"H {temperature(weather.high)} / L {temperature(weather.low)}",
+            label(draw, (PANEL_CENTER, 578), f"H {temperature(weather.high)} / L {temperature(weather.low)}",
                   21, "Medium", SECONDARY, "ms")
         if weather.status == "stale":
-            label(draw, (CENTER, 588), "Last known weather", 16, fill=SECONDARY, anchor="ms")
-    name = fit_line(draw, unicodedata.normalize("NFC", location), font(16), WIDTH-PANEL_X-48)
-    label(draw, (CENTER, 631), name, 16, fill=SECONDARY, anchor="ms")
+            label(draw, (PANEL_CENTER, 605), "Last known weather", 16, fill=SECONDARY, anchor="ms")
+    name = fit_line(draw, unicodedata.normalize("NFC", location), font(16), PANEL_TEXT_WIDTH)
+    label(draw, (PANEL_CENTER, 640), name, 16, fill=SECONDARY, anchor="ms")
 
 
 def todo(draw, tasks, page_number, page_count):
@@ -148,19 +157,19 @@ def todo(draw, tasks, page_number, page_count):
             details.append(task.priority.capitalize() + " priority")
         if task.due_date:
             details.append(f"Due {month_abbr[task.due_date.month]} {task.due_date.day}")
-        title = fit_line(draw, unicodedata.normalize("NFC", task.title), font(24, "Medium"), RIGHT-118)
+        title = fit_line(draw, unicodedata.normalize("NFC", task.title), font(24, "Medium"), RIGHT - TASK_TEXT_X)
         y = cy if details else cy + 8
-        label(draw, (118, y), title, 24, "Medium", SECONDARY if task.completed else INK)
+        label(draw, (TASK_TEXT_X, y), title, 24, "Medium", SECONDARY if task.completed else INK)
         if task.completed:
-            draw.line((118, y-8, 118+draw.textlength(title, font=font(24, "Medium")), y-8),
+            draw.line((TASK_TEXT_X, y-8, TASK_TEXT_X+draw.textlength(title, font=font(24, "Medium")), y-8),
                       fill=SECONDARY, width=2)
         if details:
-            label(draw, (118, cy+24), "  ·  ".join(details), 16, fill=SECONDARY)
+            label(draw, (TASK_TEXT_X, cy+24), "  ·  ".join(details), 16, fill=SECONDARY)
         draw.line((LEFT, box.y+box.h-1, RIGHT, box.y+box.h-1), fill=RULE)
     if not tasks:
-        label(draw, ((LEFT+RIGHT)//2, 344), "No tasks to display", 30, "Medium", anchor="ms")
+        label(draw, (MAIN_CENTER, 344), "No tasks to display", 30, "Medium", anchor="ms")
     if page_count > 1:
-        label(draw, ((LEFT+RIGHT)//2, 643), f"{page_number} of {page_count}", 18,
+        label(draw, (MAIN_CENTER, 643), f"{page_number} of {page_count}", 18,
               "Medium", SECONDARY, "ms")
         for box, enabled, text in ((PREVIOUS, page_number > 1, "‹  Previous"),
                                    (NEXT, page_number < page_count, "Next  ›")):
@@ -179,19 +188,19 @@ def render_landscape(page: Page, now: datetime, location: str, weather: Weather,
     if page == "todo":
         todo(draw, tasks or [], page_number, page_count)
     elif page == "calendar":
-        icon(draw, "calendar", 348, 282)
-        label(draw, (348, 354), "Calendar preview", 34, "Bold", anchor="ms")
-        label(draw, (348, 398), "Monthly view and agenda coming in Phase 3B.", 20,
+        icon(draw, "calendar", MAIN_CENTER, 282)
+        label(draw, (MAIN_CENTER, 354), "Calendar preview", 34, "Bold", anchor="ms")
+        label(draw, (MAIN_CENTER, 398), "Monthly view and agenda coming in Phase 3B.", 20,
               fill=SECONDARY, anchor="ms")
     else:
-        label(draw, (348, 196), "Focus session", 23, "Medium", SECONDARY, "ms")
-        label(draw, (348, 332), "25:00", 112, "Bold", anchor="ms")
-        draw.line((204, 371, 492, 371), fill=RULE, width=4)
-        draw.ellipse((200, 367, 208, 375), fill=SECONDARY)
-        for x, text in ((272, "Start"), (424, "Reset")):
+        label(draw, (MAIN_CENTER, 196), "Focus session", 23, "Medium", SECONDARY, "ms")
+        label(draw, (MAIN_CENTER, 332), "25:00", 112, "Bold", anchor="ms")
+        draw.line((MAIN_CENTER-144, 371, MAIN_CENTER+144, 371), fill=RULE, width=4)
+        draw.ellipse((MAIN_CENTER-148, 367, MAIN_CENTER-140, 375), fill=SECONDARY)
+        for x, text in ((MAIN_CENTER-76, "Start"), (MAIN_CENTER+76, "Reset")):
             draw.rounded_rectangle((x-59, 426, x+59, 479), 4, outline=RULE)
             label(draw, (x, 461), text, 22, "Medium", SECONDARY, "ms")
-        label(draw, (348, 530), "Preview · Timer controls disabled", 19, fill=SECONDARY, anchor="ms")
+        label(draw, (MAIN_CENTER, 530), "Preview · Timer controls disabled", 19, fill=SECONDARY, anchor="ms")
     information(draw, now, location, weather)
     device_indicators(draw, battery, wifi)
     for index, tab in enumerate(TABS):

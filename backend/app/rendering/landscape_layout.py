@@ -3,8 +3,16 @@ from typing import Literal
 
 Page = Literal["todo", "calendar", "pomodoro"]
 WIDTH, HEIGHT = 1024, 758
-PANEL_X, NAV_Y = 696, 666
-LEFT, RIGHT = 42, 654
+PANEL_X, NAV_Y = 635, 666
+LEFT, RIGHT = 42, PANEL_X - 42
+MAIN_CENTER = (LEFT + RIGHT) // 2
+TASK_TEXT_X = LEFT + 76
+PANEL_CENTER = (PANEL_X + WIDTH) // 2
+PANEL_INSET = 36
+PANEL_TEXT_WIDTH = WIDTH - PANEL_X - 2 * PANEL_INSET
+CLOCK_WIDTH = PANEL_TEXT_WIDTH - 40
+CLOCK_DIVIDER_Y, DATE_DIVIDER_Y = 208, 368
+WEATHER_ICON_Y = 418
 ROWS_Y, ROW_HEIGHT, PAGE_SIZE = 121, 81, 6
 TABS: tuple[Page, ...] = ("todo", "calendar", "pomodoro")
 TAB_LABELS = {"todo": "Todo", "calendar": "Calendar", "pomodoro": "Pomodoro"}
