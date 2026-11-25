@@ -2,7 +2,7 @@ from secrets import compare_digest
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from app.models.dashboard import Deadline, Task
@@ -15,16 +15,18 @@ from app.services.weather import Weather
 router = APIRouter(include_in_schema=False)
 
 
-@router.get("/api/display")
-def trmnl_display(
+def require_device(
     request: Request,
     access_token: Annotated[str | None, Header()] = None,
-) -> JSONResponse:
+) -> None:
     configured_token = request.app.state.settings.trmnl_access_token
     expected = configured_token.get_secret_value() if configured_token else ""
     if not expected or not access_token or not compare_digest(access_token.encode(), expected.encode()):
         raise HTTPException(401, "Invalid access token", headers=NO_CACHE)
 
+
+@router.get("/api/display", dependencies=[Depends(require_device)])
+def trmnl_display(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "image_url": str(request.url_for("kindle_dashboard_image")),

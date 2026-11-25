@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 
-from PIL import ImageDraw, ImageFont
+from PIL import ImageDraw
 
 from app.models.dashboard import Deadline, Task
 from app.rendering.kindle import RenderContext, render_png
+from app.rendering.typography import font
 from app.schemas.dashboard import Preferences
 from app.services.dashboard import TORONTO, days_until
 from app.services.weather import Weather
@@ -59,9 +60,9 @@ def render_dashboard(settings, preferences: Preferences, tasks: list[Task],
 
         margin = context.scale // 20
         row = context.scale // 19
-        body = ImageFont.load_default(size=context.scale // 29)
-        heading = ImageFont.load_default(size=context.scale // 24)
-        title = ImageFont.load_default(size=context.scale // 17)
+        body = font(context.scale // 29)
+        heading = font(context.scale // 24, "Medium")
+        title = font(context.scale // 17, "Bold")
         width = context.width - 2 * margin
         draw.text((margin, margin), fit_line(draw, preferences.dashboard_title, title, width), font=title, fill=0)
         y = margin + row * 2

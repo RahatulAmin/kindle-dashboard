@@ -1,0 +1,1220 @@
+--[[--
+TRMNL Display Plugin for KOReader
+
+Fetches and displays personalized screens from the TRMNL API.
+Supports automatic periodic refresh, full-screen display, and WiFi management.
+]]
+
+local DataStorage = require("datastorage")
+local Device = require("device")
+local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
+local InfoMessage = require("ui/widget/infomessage")
+local ImageWidget = require("ui/widget/imagewidget")
+local InputContainer = require("ui/widget/container/inputcontainer")
+local LuaSettings = require("luasettings")
+local MultiInputDialog = require("ui/widget/multiinputdialog")
+local NetworkMgr = require("ui/network/manager")
+local RenderImage = require("ui/renderimage")
+local Screen = Device.screen
+local Input = Device.input
+local UIManager = require("ui/uimanager")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local Dispatcher = require("dispatcher")
+local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
+local util = require("util")
+local _ = require("gettext")
+local T = require("ffi/util").template
+
+--[[--
+Retry Manager - handles exponential backoff for failed requests.
+Implements: 60s, 120s, 240s, 480s, etc., capped at max_delay.
+--]]
+local RetryManager = {}
+RetryManager.__index = RetryManager
+RetryManager.BASE_DELAY = 60
+RetryManager.MIN_DELAY = 60
+
+function RetryManager:new(max_delay)
+    local instance = {
+        count = 0,
+        max_delay = max_delay or 1800
+    }
+    setmetatable(instance, self)
+    return instance
+end
+
+function RetryManager:getDelay()
+    local delay = self.BASE_DELAY * (2 ^ self.count)
+    return math.min(delay, math.max(self.max_delay, self.MIN_DELAY))
+end
+
+function RetryManager:increment()
+    self.count = self.count + 1
+    return self:getDelay()
+end
+
+function RetryManager:reset()
+    self.count = 0
+end
+
+--[[--
+Main plugin class extending WidgetContainer.
+Provides lifecycle hooks (init, onSuspend, onResume) and menu integration.
+]]
+local TrmnlDisplay = WidgetContainer:extend {
+    name = "trmnl",
+    is_doc_only = false,
+
+    settings = nil,
+    settings_file = nil,
+
+    refresh_task = nil,
+    auto_refresh_enabled = false,
+    image_widget = nil,
+    last_image_filename = nil,
+
+    retry_manager = nil,
+}
+
+TrmnlDisplay.USER_AGENT = "trmnl-display/0.2.0-koreader"
+
+TrmnlDisplay.CONSTANTS = {
+    TIMING = {
+        DEFAULT_REFRESH_INTERVAL = 1800,
+    },
+    FILES = {
+        DEFAULT_IMAGE = "trmnl_screen.png",
+        SCREENS_FOLDER = "trmnl-screens",
+        API_KEY = "apikey.txt",
+    }
+}
+
+TrmnlDisplay.default_settings = {
+    api_key = nil,
+    base_url = "https://trmnl.app",
+    refresh_interval = 1800,
+    refresh_type = "ui",
+    show_notifications = true,
+    mac_header_name = nil,  -- Header name for MAC address (configurable for BYOS)
+    mac_address = nil,  -- Manual MAC address override (nil = auto-detect)
+}
+
+--[[--
+Plugin initialization - loads settings, initializes managers, and restores state.
+]]
+function TrmnlDisplay:init()
+    self.settings_file = LuaSettings:open(DataStorage:getSettingsDir() .. "/trmnl.lua")
+    self.settings = self.settings_file:readSetting("settings") or util.tableDeepCopy(self.default_settings)
+    self.auto_refresh_enabled = self.settings_file:readSetting("auto_refresh_enabled") or false
+
+    self.retry_manager = RetryManager:new(self.settings.refresh_interval or
+        self.CONSTANTS.TIMING.DEFAULT_REFRESH_INTERVAL)
+
+    -- Try auto-loading API key from file
+    local file_api_key = self:loadApiKeyFromFile()
+    if file_api_key then
+        self.settings.api_key = file_api_key
+        self:saveSettings()
+        logger.info("TRMNL: API key auto-configured from file")
+    end
+
+    -- Must be instance-specific for UIManager to track properly
+    self.refresh_task = function()
+        self:fetchAndDisplay()
+    end
+
+    Dispatcher:registerAction("trmnl_fetch_now", {category="none", event="TrmnlFetch", title=_("TRMNL: Fetch now"), general=true})
+    Dispatcher:registerAction("trmnl_start_interactive", {category="none", event="TrmnlStartInteractive", title=_("TRMNL: Start dashboard"), general=true})
+
+    self:pinToTopOfTools()
+    self:removeScreensLeftByOlderVersions()
+    self.ui.menu:registerToMainMenu(self)
+
+    if self.auto_refresh_enabled then
+        self:startAutoRefresh()
+    end
+end
+
+--[[--
+Save settings to disk (called automatically on suspend/exit).
+]]
+function TrmnlDisplay:pinToTopOfTools()
+    for _, order_module in ipairs({ "ui/elements/filemanager_menu_order", "ui/elements/reader_menu_order" }) do
+        local tools = require(order_module).tools
+        if tools[1] ~= "trmnl" then
+            table.insert(tools, 1, "trmnl")
+        end
+    end
+end
+
+function TrmnlDisplay:removeScreensLeftByOlderVersions()
+    local data_dir = DataStorage:getDataDir()
+    for name in lfs.dir(data_dir) do
+        if name:match("^plugin%-%x+%-%d+%.png$") or name == self.CONSTANTS.FILES.DEFAULT_IMAGE then
+            os.remove(data_dir .. "/" .. name)
+        end
+    end
+end
+
+function TrmnlDisplay:onFlushSettings()
+    if self.settings_file then
+        self.settings_file:saveSetting("settings", self.settings)
+        self.settings_file:saveSetting("auto_refresh_enabled", self.auto_refresh_enabled)
+        self.settings_file:flush()
+    end
+end
+
+function TrmnlDisplay:saveSettings()
+    self:onFlushSettings()
+end
+
+function TrmnlDisplay:getPluginDir()
+    local info = debug.getinfo(1, "S")
+    local filepath = info.source:match("^@(.+)$")
+    if filepath then
+        return filepath:match("(.*/)")
+    end
+    return nil
+end
+
+--[[--
+Load API key from apikey.txt in plugin directory (if present).
+]]
+function TrmnlDisplay:loadApiKeyFromFile()
+    local plugin_dir = self:getPluginDir()
+    if not plugin_dir then
+        return nil
+    end
+
+    local apikey_path = plugin_dir .. self.CONSTANTS.FILES.API_KEY
+    local file = io.open(apikey_path, "r")
+    if not file then
+        return nil
+    end
+
+    local content = file:read("*all")
+    file:close()
+
+    if not content or content == "" then
+        return nil
+    end
+
+    local api_key = content:match("^%s*(.-)%s*$")
+    if api_key and api_key ~= "" then
+        logger.info("TRMNL: API key loaded from file")
+        return api_key
+    end
+
+    return nil
+end
+
+--[[--
+Get MAC address of the wireless network interface.
+
+Uses FFI (Foreign Function Interface) to call POSIX system calls:
+- getifaddrs(): Enumerate all network interfaces
+- ioctl(SIOCGIWNAME): Check if interface is wireless
+- ioctl(SIOCGIFHWADDR): Get hardware (MAC) address
+
+@treturn string|nil MAC address (format: "XX:XX:XX:XX:XX:XX") or nil if not available
+]]
+function TrmnlDisplay:getMacAddress()
+    local interfaces = {
+        "wlan0",
+        "wlan1",
+        "mlan0",
+    }
+ 
+    for _, iface in ipairs(interfaces) do
+        local path = "/sys/class/net/" .. iface .. "/address"
+        local file = io.open(path, "r")
+ 
+        if file then
+            local mac = file:read("*l")
+            file:close()
+ 
+            if mac and mac ~= "" then
+                mac = mac:upper()
+ 
+                -- Ignore invalid/all-zero addresses
+                if mac ~= "00:00:00:00:00:00" then
+                    logger.info(
+                        "TRMNL: Auto-detected MAC address:",
+                        mac,
+                        "interface:",
+                        iface
+                    )
+                    return mac
+                end
+            end
+        end
+    end
+ 
+    logger.info("TRMNL: No wireless interface MAC address found")
+    return nil
+end
+
+--[[--
+Read the Wi-Fi signal level from the kernel's wireless statistics.
+
+@treturn number|nil Signal level in dBm, or nil when unknown
+]]
+function TrmnlDisplay:getRssi(path)
+    local file = io.open(path or "/proc/net/wireless", "r")
+    if not file then
+        return nil
+    end
+    local stats = file:read("*a")
+    file:close()
+
+    -- Columns after the interface name: status, link quality, level, noise.
+    local level = tonumber(stats:match("%w+:%s+%x+%s+[%d.]+%s+(%-?%d+)"))
+    -- NOTE: older drivers (Kindle PW1) report dBm as an unsigned byte, which iwconfig maps the same way.
+    if level and level >= 64 then
+        level = level - 256
+    end
+    if level and level < 0 then
+        return level
+    end
+    return nil
+end
+
+--============================================================================--
+-- Network and API Methods
+--
+-- These methods handle:
+-- - HTTP/HTTPS requests to TRMNL API
+-- - JSON parsing
+-- - Image downloads
+-- - Error handling and retry logic
+--============================================================================--
+
+--[[--
+Fetch screen metadata from TRMNL API.
+
+Makes HTTP GET request to /api/display endpoint with headers:
+- access-token: User's API key
+- percent-charged: Device battery percentage
+- png-width/png-height: Screen dimensions in pixels
+- rssi: WiFi signal strength in dBm, when known
+- battery-charging: whether the device is charging
+- User-Agent: Plugin version string
+
+@treturn table|nil Decoded JSON response table, or nil on error
+]]
+function TrmnlDisplay:fetchScreenMetadata()
+    if not self.settings.api_key or self.settings.api_key == "" then
+        return nil, "Please configure your TRMNL API key first"
+    end
+
+    -- LuaSocket libraries for HTTP/HTTPS requests
+    local http = require("socket.http") -- HTTP protocol
+    local https = require("ssl.https")  -- HTTPS/TLS protocol
+    local JSON = require("json")        -- JSON parsing
+    local socketutil = require("socketutil")
+
+    -- The sink accumulates the response body into this table
+    local sink = {}
+    local request_url = self.settings.base_url .. "/api/display"
+
+    -- Get device information for API headers
+    -- Device:hasBattery() checks if device has battery capability
+    -- Device:getPowerDevice() returns power device object with getCapacity() method
+    local percent_charged = "0"
+    local battery_charging
+    if Device:hasBattery() then
+        local powerd = Device:getPowerDevice()
+        percent_charged = tostring(powerd:getCapacity()) -- Returns 0-100 percentage
+        -- NOTE: sent as 1 or 0 like TRMNL firmware; Terminus rejects any request where this header is not an integer.
+        battery_charging = powerd:isCharging() and "1" or "0"
+    end
+    local rssi = self:getRssi()
+
+    -- Screen:getWidth()/getHeight() return pixel dimensions
+    -- TRMNL uses this to generate appropriately sized images
+    local png_width = tostring(Screen:getWidth())
+    local png_height = tostring(Screen:getHeight())
+
+    -- Get MAC address: manual entry wins (if not empty), otherwise auto-detect
+    local mac_address
+    local manual_mac = self.settings.mac_address
+    if manual_mac and manual_mac ~= "" then
+        -- Manual MAC provided - use it
+        mac_address = manual_mac
+        logger.dbg("TRMNL: Using manual MAC address:", mac_address)
+    else
+        -- No manual MAC or empty string - try auto-detection.
+        -- Staying nil drops the header from the table constructor below, which is
+        -- what we want: claiming a made-up MAC is worse than claiming none.
+        mac_address = self:getMacAddress()
+        logger.dbg("TRMNL: Using MAC address:", mac_address or "(none detected)")
+    end
+
+    -- Get custom header name for MAC address
+    local mac_header_name = self.settings.mac_header_name or "ID"
+
+    logger.info("TRMNL: Fetching screen from", request_url)
+    logger.dbg("TRMNL: Screen dimensions:", png_width, "x", png_height)
+
+    -- Build HTTP request table (LuaSocket format)
+    local request = {
+        url = request_url,
+        method = "GET",
+        headers = {
+            ["access-token"] = self.settings.api_key,  -- TRMNL API authentication
+            ["percent-charged"] = percent_charged,     -- Device battery level
+            ["png-width"] = png_width,                 -- Screen width in pixels
+            ["png-height"] = png_height,               -- Screen height in pixels
+            ["battery-charging"] = battery_charging,
+            ["rssi"] = rssi and tostring(rssi),        -- Omitted when unknown; the server reads 0 as full strength
+            [mac_header_name] = mac_address,           -- MAC address with custom header name
+            ["User-Agent"] = self.USER_AGENT,          -- Plugin identification
+        },
+        sink = socketutil.table_sink(sink),            -- Response body stored in 'sink' table
+        -- SSL/TLS configuration for HTTPS
+        protocol = "any",                              -- Accept any SSL/TLS version
+        options = { "all", "no_sslv2", "no_sslv3" },   -- Disable insecure SSL versions
+        verify = "none",                               -- Skip certificate verification (required for Kindles with outdated cert stores)
+    }
+
+    -- Choose HTTP or HTTPS based on URL scheme
+    local httpx = request_url:match("^https://") and https or http
+    -- NOTE: requests block KOReader's UI, so a stalled server must not hold it for LuaSocket's 60 s default.
+    socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
+    local success_code, status_code = httpx.request(request)
+    socketutil:reset_timeout()
+
+    logger.dbg("TRMNL: Success code:", success_code)
+    logger.dbg("TRMNL: HTTP status code:", status_code)
+
+    if not success_code or success_code ~= 1 then
+        -- NOTE: on a transport failure LuaSocket returns the reason in place of the status.
+        logger.err("TRMNL: Request failed:", status_code)
+        return nil, T(_("Failed to reach the server: %1"), tostring(status_code))
+    end
+
+    if status_code ~= 200 then
+        logger.err("TRMNL: API returned HTTP", status_code)
+        local hint = ""
+        if status_code == 401 or status_code == 403 then
+            hint = ": check your API key in settings"
+        elseif status_code == 404 then
+            hint = ": check the base URL"
+        end
+        return nil, "Server returned HTTP " .. tostring(status_code) .. hint
+    end
+
+    local response_body = table.concat(sink)
+    logger.dbg("TRMNL: Received response:", response_body:sub(1, 200))
+
+    local ok, response = pcall(JSON.decode, response_body)
+    if not ok or not response then
+        logger.err("TRMNL: Failed to parse JSON response")
+        return nil, "The server's response is not JSON: check the base URL"
+    end
+
+    return response
+end
+
+function TrmnlDisplay:downloadImage(image_url, filepath)
+    local http = require("socket.http")
+    local https = require("ssl.https")
+    local socketutil = require("socketutil")
+
+    logger.info("TRMNL: Downloading image from", image_url)
+
+    local file = io.open(filepath, "wb")
+    if not file then
+        logger.err("TRMNL: Failed to open file for writing:", filepath)
+        return false
+    end
+
+    local request = {
+        url = image_url,
+        sink = socketutil.file_sink(file),
+        headers = {
+            ["User-Agent"] = self.USER_AGENT,
+        },
+        -- SSL/TLS configuration (same as API request)
+        protocol = "any",
+        options = { "all", "no_sslv2", "no_sslv3" },
+        verify = "none", -- Skip certificate verification (required for Kindles)
+    }
+
+    local httpx = image_url:match("^https://") and https or http
+    socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
+    local success_code, status_code = httpx.request(request)
+    socketutil:reset_timeout()
+
+    logger.dbg("TRMNL: Image download success code:", success_code)
+    logger.dbg("TRMNL: Image download HTTP status:", status_code)
+
+    if not success_code or success_code ~= 1 then
+        logger.err("TRMNL: Image download failed:", status_code)
+        os.remove(filepath)
+        return false, tostring(status_code)
+    end
+
+    if status_code ~= 200 then
+        logger.err("TRMNL: Image download failed - HTTP", status_code)
+        os.remove(filepath)
+        return false, "HTTP " .. tostring(status_code)
+    end
+
+    logger.info("TRMNL: Image downloaded successfully")
+    return true
+end
+
+function TrmnlDisplay:displayImage(image_path)
+    -- NOTE: Keep old image visible while rendering new one
+    -- Only close it if we successfully render the replacement
+    -- This prevents empty screens during network/rendering errors
+
+    local screen_width = Screen:getWidth()
+    local screen_height = Screen:getHeight()
+
+    logger.info("TRMNL: Rendering image", image_path)
+
+    local image_bb = RenderImage:renderImageFile(
+        image_path,
+        true, -- enable caching
+        screen_width,
+        screen_height
+    )
+
+    if not image_bb then
+        logger.err("TRMNL: Failed to render image")
+        return false
+    end
+
+    -- Close previous image widget only after successfully rendering new one
+    if self.image_widget then
+        UIManager:close(self.image_widget)
+        self.image_widget = nil
+    end
+
+    local image = ImageWidget:new {
+        image = image_bb,
+        image_disposable = true,
+        width = screen_width,
+        height = screen_height,
+        alpha = true,
+    }
+
+    -- Wrap in InputContainer to handle tap events
+    self.image_widget = InputContainer:new {
+        dimen = {
+            x = 0,
+            y = 0,
+            w = screen_width,
+            h = screen_height,
+        },
+        image,
+    }
+
+    self.image_widget.onGestureClose = function()
+        logger.info("TRMNL: Closing image via gesture")
+        self:stopAutoRefresh()
+        UIManager:close(self.image_widget)
+        self.image_widget = nil
+        return true
+    end
+
+    self.image_widget.onAnyKeyPressed = function(widget, _, key)
+        if key and (key:match({ Input.group.PgFwd }) or key:match({ Input.group.PgBack })) then
+            return widget.onGestureFetch()
+        end
+        return widget.onGestureClose()
+    end
+
+    self.image_widget.onGestureFetch = function()
+        self:onTrmnlFetch()
+        return true
+    end
+
+    if Device:isTouchDevice() then
+        local function anywhere(ges)
+            return { GestureRange:new { ges = ges, range = Geom:new { x = 0, y = 0, w = screen_width, h = screen_height } } }
+        end
+        -- Hold to close stops accidental exits on a shared dashboard; tap then fetches a new screen.
+        if self.settings.close_gesture == "hold" then
+            self.image_widget.ges_events = { GestureClose = anywhere("hold"), GestureFetch = anywhere("tap") }
+        else
+            self.image_widget.ges_events = { GestureClose = anywhere("tap") }
+        end
+    end
+
+    -- Register key events for non-touch devices
+    if Device:hasKeys() then
+        self.image_widget.key_events = {
+            AnyKeyPressed = { { Input.group.Any } }
+        }
+    end
+
+    -- Add widget to UIManager's display stack
+    UIManager:show(self.image_widget)
+
+    --[[--
+    E-ink refresh optimization
+
+    E-ink displays have several refresh modes with tradeoffs:
+    - "ui": Balanced speed/quality (default)
+    - "full": Slowest but best quality, clears ghosting
+    - "flashui": With screen flash for better contrast
+    - "partial": Fastest but may cause ghosting
+    ]]
+    local refresh_type = self.settings.refresh_type or "ui"
+    logger.info("TRMNL: Applying refresh type:", refresh_type)
+
+    -- UIManager:setDirty() marks widget for screen update with specified refresh mode
+    -- This triggers the e-ink controller to redraw the widget's area
+    UIManager:setDirty(self.image_widget, refresh_type)
+
+    logger.info("TRMNL: Image displayed")
+    return true
+end
+
+--============================================================================--
+-- Helper Methods
+--============================================================================--
+
+--[[--
+Smart notification system - shows informative messages without overwhelming.
+
+Types: "error", "info", "success", "progress"
+Can be toggled on/off via settings.show_notifications
+@tparam string message Main message text
+@tparam table opts Optional: {type, context, timeout, force}
+]]
+function TrmnlDisplay:notify(message, opts)
+    opts = opts or {}
+    local msg_type = opts.type or "info"
+    local context = opts.context
+
+    -- Always log, even if notifications disabled
+    logger.info("TRMNL [" .. msg_type .. "]: " .. message)
+    if context then
+        logger.dbg("TRMNL Context: " .. context)
+    end
+
+    -- Skip showing notification if disabled (unless force = true)
+    -- Always show errors though, they're important
+    if not self.settings.show_notifications and msg_type ~= "error" and not opts.force then
+        return
+    end
+
+    local timeout
+    if opts.timeout then
+        timeout = opts.timeout
+    elseif msg_type == "error" then
+        timeout = 5
+    elseif msg_type == "progress" then
+        timeout = 3
+    else
+        timeout = 2
+    end
+
+    local full_message = _(message)
+    if context and context ~= "" then
+        full_message = full_message .. "\n\n" .. context
+    end
+
+    local prefix = ""
+    if msg_type == "error" then
+        prefix = "⚠ "
+    elseif msg_type == "success" then
+        prefix = "✓ "
+    elseif msg_type == "progress" then
+        prefix = "⟳ "
+    end
+
+    UIManager:show(InfoMessage:new {
+        text = prefix .. full_message,
+        timeout = timeout,
+    })
+end
+
+function TrmnlDisplay:showError(message, context)
+    self:notify(message, { type = "error", context = context })
+end
+
+function TrmnlDisplay:showInfo(message)
+    self:notify(message, { type = "info" })
+end
+
+function TrmnlDisplay:showSuccess(message)
+    self:notify(message, { type = "success" })
+end
+
+function TrmnlDisplay:showProgress(message, context)
+    self:notify(message, { type = "progress", context = context })
+end
+
+--[[--
+Unschedule any pending refresh task.
+
+Safely removes any scheduled refresh task.
+Safe to call even if no task is scheduled.
+]]
+function TrmnlDisplay:unscheduleRefreshTask()
+    if self.refresh_task then
+        UIManager:unschedule(self.refresh_task)
+        logger.dbg("TRMNL: Unscheduled refresh task")
+    end
+end
+
+--[[--
+Schedule the next refresh if auto-refresh is enabled.
+
+Uses the last refresh rate the server sent to schedule the next fetch cycle.
+Unschedules any existing pending task to prevent double-scheduling.
+]]
+function TrmnlDisplay:scheduleNextRefresh()
+    if not self.auto_refresh_enabled then
+        logger.info("TRMNL: Auto-refresh disabled, not scheduling")
+        return
+    end
+
+    self:unscheduleRefreshTask()
+
+    local interval = self.settings.refresh_interval or self.CONSTANTS.TIMING.DEFAULT_REFRESH_INTERVAL
+    logger.info("TRMNL: Scheduling next refresh in", interval, "seconds")
+    UIManager:scheduleIn(interval, self.refresh_task)
+end
+
+--[[--
+Report a failed fetch. The retry itself was already booked by fetchAndDisplay.
+
+@tparam string error_message User-friendly error description
+]]
+function TrmnlDisplay:handleFetchError(error_message)
+    logger.err("TRMNL:", error_message, "(attempt", self.retry_manager.count, ")")
+    if self.auto_refresh_enabled then
+        self:showError(T(_("%1. Will retry in %2 seconds."), _(error_message), self.retry_manager:getDelay()))
+    else
+        self:showError(_(error_message))
+    end
+end
+
+--[[--
+Follow the refresh rate the server sends with each screen.
+
+@tparam table response API response containing optional refresh_rate field
+]]
+function TrmnlDisplay:updateRefreshInterval(response)
+    if not response.refresh_rate then
+        return
+    end
+
+    local new_interval = tonumber(response.refresh_rate)
+    if new_interval and new_interval > 0 then
+        logger.info("TRMNL: Using server refresh rate:", new_interval, "seconds")
+        self.settings.refresh_interval = new_interval
+        self:saveSettings()
+    end
+end
+
+--[[--
+Download screen image if it has changed since last fetch.
+
+Compares filename to detect changes. If unchanged, uses cached file.
+If changed, downloads new image and updates cache tracking.
+Automatically deletes old image file to prevent accumulation.
+
+@tparam table response API response containing image_url and filename
+@treturn string|nil Path to image file, or nil on download failure
+]]
+function TrmnlDisplay:downloadImageIfNeeded(response)
+    local filename = response.filename or self.CONSTANTS.FILES.DEFAULT_IMAGE
+    if not filename:match("%.png$") then
+        filename = filename .. ".png"
+    end
+
+    local screens_folder = DataStorage:getDataDir() .. "/" .. self.CONSTANTS.FILES.SCREENS_FOLDER
+    lfs.mkdir(screens_folder)
+    local image_path = screens_folder .. "/" .. filename
+
+    -- Check if image has changed
+    if filename == self.last_image_filename then
+        logger.info("TRMNL: Image unchanged, using cached file:", image_path)
+        return image_path
+    end
+
+    logger.info("TRMNL: Image changed, downloading:", filename)
+    self:showProgress("Downloading new screen...", filename)
+
+    local downloaded, reason = self:downloadImage(response.image_url, image_path)
+    if not downloaded then
+        return nil, reason
+    end
+
+    for name in lfs.dir(screens_folder) do
+        if name ~= filename and name ~= "." and name ~= ".." then
+            os.remove(screens_folder .. "/" .. name)
+        end
+    end
+    self.last_image_filename = filename
+    return image_path
+end
+
+--[[--
+Finalize successful fetch - cleanup, reset state, and schedule next refresh.
+]]
+function TrmnlDisplay:finalizeFetchSuccess(image_path)
+    self:displayImage(image_path)
+    logger.info("TRMNL: Fetch and display completed successfully")
+
+    self:showSuccess("Screen updated successfully")
+
+    -- Clean up WiFi using KOReader's framework
+    NetworkMgr:afterWifiAction()
+
+    self.retry_manager:reset()
+
+    self:scheduleNextRefresh()
+end
+
+--[[--
+Main workflow - fetches screen from API and displays it.
+
+Called by user action, auto-refresh timer, or network availability callback.
+Uses pipeline pattern for clear flow control and early exits on errors.
+]]
+function TrmnlDisplay:fetchAndDisplay()
+    logger.info("TRMNL: Starting fetch and display cycle")
+
+    -- NOTE: a failed Wi-Fi connection never runs the callback, so the retry is booked before trying.
+    -- A successful fetch replaces it with the normal refresh.
+    if self.auto_refresh_enabled then
+        self:unscheduleRefreshTask()
+        local retry_delay = self.retry_manager:increment()
+        logger.info("TRMNL: Retry booked in", retry_delay, "seconds in case this attempt fails")
+        UIManager:scheduleIn(retry_delay, self.refresh_task)
+    end
+
+    NetworkMgr:runWhenConnected(function()
+        self:_doFetchAndDisplay()
+    end)
+end
+
+--[[--
+Internal fetch implementation that runs after WiFi is confirmed connected.
+Separated from fetchAndDisplay to work with NetworkMgr:runWhenConnected().
+
+Includes a small delay after WiFi connection to ensure the network stack is fully ready
+for HTTP requests, as some devices report "connected" before being able to make requests.
+]]
+function TrmnlDisplay:_doFetchAndDisplay()
+    -- Give WiFi a moment to fully stabilize after connection
+    -- This prevents "connected but not really" issues on some devices
+    logger.info("TRMNL: WiFi connected, waiting 2 seconds for network to stabilize...")
+    UIManager:scheduleIn(2, function()
+        self:_performFetch()
+    end)
+end
+
+--[[--
+Perform the actual fetch and display after WiFi is ready.
+]]
+function TrmnlDisplay:_performFetch()
+    local response, reason = self:fetchScreenMetadata()
+    if not response or not response.image_url then
+        -- NOTE: the API reports device/token problems as HTTP 200 with
+        -- {"status": 500, "error": "..."}, so the only place that detail survives is here.
+        local detail = response and (response.error or
+            (response.status and "status " .. tostring(response.status)))
+        if detail then
+            logger.err("TRMNL: API returned no image_url:", detail)
+        end
+        self:handleFetchError(reason or detail or "Failed to fetch screen metadata")
+        NetworkMgr:afterWifiAction()
+        return
+    end
+
+    self:updateRefreshInterval(response)
+
+    local image_path, reason = self:downloadImageIfNeeded(response)
+    if not image_path then
+        self:handleFetchError(reason and "Failed to download image: " .. reason or "Failed to download image")
+        NetworkMgr:afterWifiAction()
+        return
+    end
+
+    self:finalizeFetchSuccess(image_path)
+end
+
+--============================================================================--
+-- Auto-Refresh Control
+--
+-- These methods start/stop the automatic refresh cycle.
+-- Called by menu actions and lifecycle hooks.
+--============================================================================--
+
+--[[--
+Start auto-refresh cycle.
+
+Called by:
+- User selecting "Start dashboard" menu item
+- Plugin init() if auto-refresh was previously enabled
+
+Flow:
+1. Enable auto-refresh flag
+2. Save state to disk
+3. Fetch and display immediately (no delay for first refresh)
+4. fetchAndDisplay() will schedule subsequent refreshes
+]]
+function TrmnlDisplay:startAutoRefresh()
+    logger.info("TRMNL: Starting auto-refresh")
+
+    -- NOTE: Ensure clean state before starting
+    self:unscheduleRefreshTask()
+
+    self.auto_refresh_enabled = true
+    self:saveSettings()                 -- Persist across KOReader restarts
+
+    self:showProgress("Starting auto-refresh...", "Fetching first screen")
+
+    -- Start immediately - will display the image and schedule next refresh
+    self:fetchAndDisplay()
+
+    logger.dbg("TRMNL: Auto-refresh started, initial fetch triggered")
+end
+
+--[[--
+Stop auto-refresh cycle.
+
+Called by:
+- User selecting "Stop dashboard" menu item
+- Closing the dashboard (onGestureClose)
+- Device lifecycle events (suspend, plugin close)
+
+Unschedules any pending refresh tasks using UIManager:unschedule().
+]]
+function TrmnlDisplay:stopAutoRefresh()
+    if not self.auto_refresh_enabled then
+        logger.dbg("TRMNL: Auto-refresh already stopped")
+        return
+    end
+
+    logger.info("TRMNL: Stopping auto-refresh")
+
+    -- NOTE: Unschedule first to ensure clean state
+    self:unscheduleRefreshTask()
+
+    self.auto_refresh_enabled = false
+    self:saveSettings() -- Persist across KOReader restarts
+
+    logger.dbg("TRMNL: Auto-refresh stopped, all tasks unscheduled")
+end
+
+--============================================================================--
+-- Lifecycle Handlers
+--
+-- These are lifecycle hooks called automatically by KOReader:
+-- - onSuspend: Called when device is about to sleep
+-- - onResume: Called when device wakes from sleep
+-- - onCloseWidget: Called when plugin is disabled or KOReader exits
+--
+-- Proper lifecycle handling ensures:
+-- - Tasks don't run while device is suspended (saves battery)
+-- - Fresh data is fetched immediately on wake
+-- - No resource leaks when plugin is disabled
+--============================================================================--
+
+--[[--
+Device is suspending (going to sleep).
+
+Unschedule refresh task to prevent it running during sleep.
+]]
+function TrmnlDisplay:onSuspend()
+    if self.auto_refresh_enabled then
+        self:unscheduleRefreshTask()
+    end
+end
+
+--[[--
+Device is resuming (waking from sleep).
+
+If auto-refresh is enabled, fetch immediately rather than waiting for the
+scheduled interval. This ensures fresh data after potentially long sleep periods.
+Unschedules any pending task first to prevent double-refresh.
+
+NOTE: If auto_restore_wifi is enabled, skip immediate fetch to prevent duplicate
+network events and connection UI popups. The WiFi will be auto-restored and we'll
+wait for the next scheduled refresh instead.
+]]
+function TrmnlDisplay:onResume()
+    if Device:hasWifiRestore() and NetworkMgr.wifi_was_on and
+        G_reader_settings:isTrue("auto_restore_wifi") then
+        if self.auto_refresh_enabled then
+            self:scheduleNextRefresh()
+        end
+        return
+    end
+
+    if not self.auto_refresh_enabled then
+        return
+    end
+
+    self:unscheduleRefreshTask()
+    self:fetchAndDisplay()
+end
+
+--[[--
+Plugin is being disabled or KOReader is exiting.
+
+Clean up:
+- Stop auto-refresh cycle
+- Close any displayed image widgets
+- Settings are automatically flushed by onFlushSettings()
+]]
+function TrmnlDisplay:onCloseWidget()
+    logger.dbg("TRMNL: Plugin closing")
+    self:stopAutoRefresh()
+    if self.image_widget then
+        UIManager:close(self.image_widget)
+        self.image_widget = nil
+    end
+end
+
+--============================================================================--
+-- UI Configuration
+--
+-- These methods create and manage user interface elements:
+-- - Configuration dialogs for settings
+-- - Main menu integration
+-- - Submenus for advanced options
+--
+-- KOReader UI Components Used:
+-- - MultiInputDialog: Multiple text/number fields in one dialog
+-- - InfoMessage: Temporary notification pop-ups
+-- - menu_items table: Hierarchical menu structure
+-- - text_func: Dynamic menu text based on state
+-- - checked_func: Radio button/checkbox state
+--============================================================================--
+
+--[[--
+Show configuration dialog for basic settings.
+
+Uses MultiInputDialog which provides multiple input fields in one dialog:
+- API Key (password-masked text input)
+- Base URL (text input)
+
+Fields are retrieved via getFields() which returns array of values in order.
+]]
+function TrmnlDisplay:showConfigDialog()
+    -- Get auto-detected MAC to show as placeholder/hint
+    local auto_mac = self:getMacAddress() or "Auto-detect unavailable"
+    local mac_hint = auto_mac ~= "Auto-detect unavailable"
+        and _("MAC address (leave empty to use:") .. auto_mac .. ")"
+        or _("MAC address (auto-detect unavailable)")
+
+    self.config_dialog = MultiInputDialog:new {
+        title = _("Configure TRMNL"),
+        fields = {
+            {
+                text = self.settings.api_key or "",
+                hint = _("Enter your TRMNL API key"),
+                input_type = "string",
+                password = true,
+            },
+            {
+                text = self.settings.base_url or "https://trmnl.app",
+                hint = _("TRMNL base URL"),
+                input_type = "string",
+            },
+            {
+                text = self.settings.mac_header_name or "ID",
+                hint = _("MAC address header name (e.g. ID)"),
+                input_type = "string",
+            },
+            {
+                text = self.settings.mac_address or "",
+                hint = mac_hint,
+                input_type = "string",
+            },
+        },
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(self.config_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local fields = self.config_dialog:getFields()
+                        self.settings.api_key = fields[1]
+                        self.settings.base_url = fields[2]
+                        self.settings.mac_header_name = fields[3]
+                        self.settings.mac_address = fields[4] ~= "" and fields[4] or nil
+                        self:saveSettings()
+                        UIManager:close(self.config_dialog)
+                        self:showInfo("TRMNL settings saved.")
+                    end,
+                },
+            },
+        },
+    }
+
+    UIManager:show(self.config_dialog)
+end
+
+--============================================================================--
+-- Menu Builders
+--============================================================================--
+
+--[[--
+Create a toggle menu item that switches between two states.
+@tparam string label_when_on Text to show when currently on
+@tparam string label_when_off Text to show when currently off
+@tparam function getter Function that returns current state (boolean)
+@tparam function toggler Function called to toggle state, should return success message
+@treturn table Menu item configuration
+]]
+function TrmnlDisplay:createToggleMenuItem(label_when_on, label_when_off, getter, toggler)
+    return {
+        text_func = function()
+            return getter() and _(label_when_on) or _(label_when_off)
+        end,
+        callback = function()
+            local message = toggler()
+            if message then
+                UIManager:show(InfoMessage:new {
+                    text = _(message),
+                    timeout = 2,
+                })
+            end
+        end
+    }
+end
+
+--[[--
+Create a radio button menu item for exclusive choices.
+@tparam string label Display text
+@tparam string setting_key Settings key to check/update
+@tparam string value Value to compare and set
+@treturn table Menu item configuration
+]]
+function TrmnlDisplay:createRadioMenuItem(label, setting_key, value)
+    return {
+        text = _(label),
+        checked_func = function()
+            return self.settings[setting_key] == value
+        end,
+        callback = function()
+            self.settings[setting_key] = value
+            self:saveSettings()
+        end
+    }
+end
+
+--[[--
+Create menu item constructors for each feature.
+]]
+function TrmnlDisplay:createFetchMenuItem()
+    return {
+        text = _("Fetch screen now"),
+        callback = function()
+            self:fetchAndDisplay()
+        end
+    }
+end
+
+function TrmnlDisplay:createConfigMenuItem()
+    return {
+        text = _("Configure TRMNL"),
+        keep_menu_open = true,
+        callback = function()
+            self:showConfigDialog()
+        end
+    }
+end
+
+function TrmnlDisplay:createAutoRefreshToggle()
+    return self:createToggleMenuItem(
+        "Stop dashboard",
+        "Start dashboard",
+        function() return self.auto_refresh_enabled end,
+        function()
+            if self.auto_refresh_enabled then
+                self:stopAutoRefresh()
+                return "Dashboard stopped."
+            else
+                self:startAutoRefresh()
+                return "Dashboard started."
+            end
+        end
+    )
+end
+
+function TrmnlDisplay:createNotificationsToggle()
+    return self:createToggleMenuItem(
+        "Hide status notifications",
+        "Show status notifications",
+        function() return self.settings.show_notifications end,
+        function()
+            self.settings.show_notifications = not self.settings.show_notifications
+            self:saveSettings()
+            return self.settings.show_notifications
+                and "Status notifications enabled (errors always shown)"
+                or "Status notifications hidden (errors still shown)"
+        end
+    )
+end
+
+--============================================================================--
+-- Menu Integration
+--============================================================================--
+
+--[[--
+Register plugin in KOReader's main menu.
+]]
+function TrmnlDisplay:addToMainMenu(menu_items)
+    menu_items.trmnl = {
+        text = _("TRMNL Display"),
+        sorting_hint = "tools",
+        sub_item_table = {
+            self:createFetchMenuItem(),
+            self:createConfigMenuItem(),
+            self:createAutoRefreshToggle(),
+            self:createNotificationsToggle(),
+            {
+                text = _("Dashboard gestures"),
+                sub_item_table = {
+                    self:createRadioMenuItem("Tap closes the screen", "close_gesture", nil),
+                    self:createRadioMenuItem("Hold closes, tap fetches a new screen", "close_gesture", "hold"),
+                }
+            },
+            {
+                text = _("E-ink refresh type"),
+                sub_item_table = {
+                    self:createRadioMenuItem("UI (balanced)", "refresh_type", "ui"),
+                    self:createRadioMenuItem("Full (best quality)", "refresh_type", "full"),
+                    self:createRadioMenuItem("Flash UI (with flash)", "refresh_type", "flashui"),
+                    self:createRadioMenuItem("Partial (fastest)", "refresh_type", "partial"),
+                }
+            },
+        }
+    }
+end
+
+function TrmnlDisplay:onTrmnlFetch()
+    self:fetchAndDisplay()
+end
+
+function TrmnlDisplay:onTrmnlStartInteractive()
+    if self.auto_refresh_enabled then
+        self:fetchAndDisplay()
+    else
+        self:startAutoRefresh()
+    end
+end
+
+return TrmnlDisplay

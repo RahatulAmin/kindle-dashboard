@@ -1,1 +1,5 @@
 /kindle-native/rahat-dashboard/* text eol=lf
+
+# Preserve upstream Lua and license file contents exactly.
+/kindle-koreader/upstream/** whitespace=-blank-at-eol
+/backend/app/rendering/fonts/OFL.txt whitespace=-blank-at-eol

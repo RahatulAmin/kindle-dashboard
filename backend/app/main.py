@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from secrets import token_bytes
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,6 +9,7 @@ from starlette.exceptions import HTTPException
 
 from app.api.kindle_diagnostic import router as diagnostic_router
 from app.api.kindle_display import router as display_router
+from app.api.kindle_landscape import router as landscape_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.health import router as health_router
@@ -49,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Kindle Dashboard", lifespan=lifespan)
     app.state.settings = settings
+    app.state.landscape_signing_key = token_bytes(32)
     app.state.login_limiter = LoginLimiter()
     app.state.weather = WeatherCache()
     app.state.kindle_diagnostic_last_press = None
@@ -57,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(kindle_router)
     app.include_router(display_router)
+    app.include_router(landscape_router)
     app.include_router(diagnostic_router)
 
     @app.exception_handler(HTTPException)
