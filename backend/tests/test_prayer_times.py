@@ -69,7 +69,7 @@ def test_aladhan_month_timezone_and_calculation_parameters(monkeypatch):
     assert prayers.time_label(datetime.fromisoformat(result["2026-03-08"][0])) == "6:08 AM"
 
 
-def test_midnight_next_prayer_and_month_boundary(tmp_path, monkeypatch):
+def test_current_prayer_through_midnight_and_month_boundary(tmp_path, monkeypatch):
     db = Database(tmp_path / "prayers.sqlite3")
     db.migrate()
     config = prayers.PrayerPreferences(enabled=True, school=0)
@@ -79,18 +79,22 @@ def test_midnight_next_prayer_and_month_boundary(tmp_path, monkeypatch):
     with db.sessions() as session:
         before = prayers.prayer_day(session, config, midnight_eve)
         assert before.today[0] == "6:30 AM"
-        assert before.next_name == "Fajr" and before.tomorrow and before.next_time == "6:01 AM"
+        assert before.current_name == "Isha"
         midnight = datetime(2026, 12, 1, tzinfo=TORONTO)
         after = prayers.prayer_day(session, config, midnight)
-        assert after.next_name == "Fajr" and not after.tomorrow and after.today[0] == "6:01 AM"
-        exact = prayers.prayer_day(session, config, midnight.replace(hour=6, minute=1))
-        assert exact.next_name == "Fajr"
-        assert prayers.prayer_day(session, config, midnight.replace(hour=6, minute=2)).next_name == "Dhuhr"
+        assert after.current_name == "Isha" and after.today[0] == "6:01 AM"
+        previous = "Isha"
+        for name, hour in zip(prayers.PRAYERS, (6, 12, 15, 17, 19), strict=True):
+            just_before = midnight.replace(hour=hour, minute=0, second=59)
+            onset = midnight.replace(hour=hour, minute=1)
+            assert prayers.prayer_day(session, config, just_before).current_name == previous
+            assert prayers.prayer_day(session, config, onset).current_name == name
+            previous = name
         session.delete(session.get(PrayerMonth, (config.cache_key(), "2026-12")))
         session.commit()
-        missing = prayers.prayer_day(session, config, midnight_eve)
-        assert missing.tomorrow and missing.next_time is None
-        assert prayers.prayer_day(session, config, midnight).today == ("--:--",) * 5
+        assert prayers.prayer_day(session, config, midnight_eve).current_name == "Isha"
+        missing = prayers.prayer_day(session, config, midnight)
+        assert missing.today == ("--:--",) * 5 and missing.current_name is None
     db.close()
 
 
@@ -104,7 +108,7 @@ def test_fall_dst_offline_restart_and_setting_changes(tmp_path, monkeypatch):
         return schedules(month, fajr_hour=6 + config.school)
     monkeypatch.setattr(prayers, "fetch_month", fetch)
     initial = prayers.PrayerPreferences(enabled=True, school=0)
-    now = datetime(2026, 11, 1, 10, 30, tzinfo=UTC)
+    now = datetime(2026, 11, 1, 11, 30, tzinfo=UTC)
     cache = prayers.PrayerCache()
     assert cache.refresh(db, initial, now)
     assert cache.refresh(db, initial, now)
@@ -125,7 +129,7 @@ def test_fall_dst_offline_restart_and_setting_changes(tmp_path, monkeypatch):
     with reopened.sessions() as session:
         assert prayers.prayer_preferences(session) == initial
         result = prayers.prayer_day(session, initial, now, include_update=True)
-        assert result.today[0] == "6:01 AM" and result.next_name == "Fajr" and result.updated_at
+        assert result.today[0] == "6:01 AM" and result.current_name == "Fajr" and result.updated_at
     alternates = initial.model_copy(update={"school": 1})
     assert not cache.refresh(reopened, alternates, now)
     assert not cache.refresh(reopened, alternates, now)
@@ -223,8 +227,5 @@ def test_same_noninteractive_strip_and_highlight_on_all_pages():
     strips = [strip(page, salat) for page in ("todo", "calendar", "pomodoro")]
     assert strips[0].tobytes() == strips[1].tobytes() == strips[2].tobytes()
     assert [strips[0].getpixel((index * WIDTH // 5 + 10, 12)) for index in range(5)] == [255, 255, 0, 255, 255]
-    tomorrow = strip("todo", prayers.PrayerDay(salat.today, "Fajr", True, "6:05 AM"))
-    assert tomorrow.getpixel((10, 12)) == 0
-    assert tomorrow.tobytes() != strip("todo", prayers.PrayerDay(salat.today, "Fajr")).tobytes()
     offline = strip("todo", prayers.PrayerDay())
     assert all(offline.getpixel((index * WIDTH // 5 + 10, 12)) == 255 for index in range(5))

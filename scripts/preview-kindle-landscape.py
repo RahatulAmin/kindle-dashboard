@@ -38,7 +38,7 @@ def main():
     ]
     prayers = None
     if options.prayer_times:
-        prayers = PrayerDay(("5:45 AM", "11:46 AM", "2:03 PM", "4:16 PM", "5:45 PM"), "Asr")
+        prayers = PrayerDay(("5:45 AM", "11:46 AM", "2:03 PM", "4:16 PM", "5:45 PM"), "Dhuhr")
         examples[0] = ("todo", "todo", tasks[:task_page_size(True)], 2, 3)
     else:
         examples.append(("todo-mixed", "todo", mixed, 2, 3))

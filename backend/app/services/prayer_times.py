@@ -69,9 +69,7 @@ class PrayerPreferences(InputModel):
 @dataclass(frozen=True)
 class PrayerDay:
     today: tuple[str, ...] = ("--:--",) * len(PRAYERS)
-    next_name: str | None = None
-    tomorrow: bool = False
-    next_time: str | None = None
+    current_name: str | None = None
     updated_at: str | None = None
 
 
@@ -143,20 +141,16 @@ def prayer_day(db, config: PrayerPreferences, now: datetime, *, include_update=F
     if include_update:
         updated_at = db.scalar(select(func.max(PrayerMonth.updated_at)).where(PrayerMonth.calculation == key))
 
-    def day_times(day):
-        row = db.get(PrayerMonth, (key, month_key(day)))
-        return [datetime.fromisoformat(value) for value in row.days.get(day.isoformat(), [])] if row else []
-
-    moments = day_times(today)
-    if not moments:
+    row = db.get(PrayerMonth, (key, month_key(today)))
+    values = row.days.get(today.isoformat(), []) if row else []
+    if not values:
         return PrayerDay(updated_at=updated_at)
-    formatted = tuple(map(time_label, moments))
-    upcoming = [(moment, name) for moment, name in zip(moments, PRAYERS, strict=True) if moment >= current]
-    if upcoming:
-        return PrayerDay(formatted, min(upcoming)[1], updated_at=updated_at)
-    tomorrow = day_times(today + timedelta(days=1))
-    next_time = time_label(tomorrow[0]) if tomorrow else None
-    return PrayerDay(formatted, "Fajr", True, next_time, updated_at)
+
+    moments = tuple(map(datetime.fromisoformat, values))
+    started = ((moment, name) for moment, name in zip(moments, PRAYERS, strict=True) if moment <= current)
+    # Before Fajr, the active slot is still the previous day's Isha.
+    _, current_name = max(started, key=lambda prayer: prayer[0], default=(None, "Isha"))
+    return PrayerDay(tuple(map(time_label, moments)), current_name, updated_at=updated_at)
 
 
 class PrayerCache:

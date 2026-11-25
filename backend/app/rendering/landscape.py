@@ -193,15 +193,12 @@ def draw_prayer_strip(draw, result: PrayerDay):
     for index, (name, timing) in enumerate(zip(PRAYERS, result.today, strict=True)):
         left, right = index * WIDTH // len(PRAYERS), (index + 1) * WIDTH // len(PRAYERS)
         center = (left + right) // 2
-        selected = name == result.next_name
+        selected = name == result.current_name
         color = 255 if selected else INK
         if selected:
             draw.rectangle((left, PRAYER_Y, right - 1, NAV_Y - 1), fill=INK)
         elif index:
             draw.line((left, PRAYER_Y, left, NAV_Y - 1), fill=RULE)
-        if selected and result.tomorrow:
-            name = f"{name} · Tomorrow"
-            timing = result.next_time or "--:--"
         label(draw, (center, PRAYER_Y + 25), name, 16, "Medium", color, "ms")
         label(draw, (center, PRAYER_Y + 52), timing, 23, "Bold", color, "ms")
     draw.line((0, NAV_Y - 1, WIDTH - 1, NAV_Y - 1), fill=RULE)
