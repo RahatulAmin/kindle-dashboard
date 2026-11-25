@@ -190,8 +190,10 @@ def todo(draw, tasks, page_number, page_count, prayer_strip):
 
 def draw_prayer_strip(draw, result: PrayerDay):
     draw.line((0, PRAYER_Y, WIDTH - 1, PRAYER_Y), fill=RULE)
-    for index, (name, timing) in enumerate(zip(PRAYERS, result.today, strict=True)):
-        left, right = index * WIDTH // len(PRAYERS), (index + 1) * WIDTH // len(PRAYERS)
+    entries = list(zip(PRAYERS, result.today, strict=True))
+    entries.insert(1, ("Sunrise", result.sunrise))
+    for index, (name, timing) in enumerate(entries):
+        left, right = index * WIDTH // len(entries), (index + 1) * WIDTH // len(entries)
         center = (left + right) // 2
         selected = name == result.current_name
         color = 255 if selected else INK

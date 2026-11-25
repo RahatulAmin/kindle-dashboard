@@ -71,6 +71,7 @@ class PrayerDay:
     today: tuple[str, ...] = ("--:--",) * len(PRAYERS)
     current_name: str | None = None
     updated_at: str | None = None
+    sunrise: str = "--:--"
 
 
 def prayer_preferences(db) -> PrayerPreferences:
@@ -114,18 +115,23 @@ def fetch_month(config: PrayerPreferences, month: str) -> dict:
     if payload["code"] != 200:
         raise ValueError("AlAdhan did not return a schedule")
     days = {}
+    sunrises = {}
     for row in payload["data"]:
         day = datetime.strptime(row["date"]["gregorian"]["date"], "%d-%m-%Y").date()
         if month_key(day) != month or row["meta"]["timezone"] != TORONTO.key:
             raise ValueError("Wrong schedule month or timezone")
         instants = [datetime.fromisoformat(row["timings"][name]) for name in PRAYERS]
+        sunrise = datetime.fromisoformat(row["timings"]["Sunrise"])
         if any(moment.utcoffset() is None or
-               moment.astimezone(TORONTO).utcoffset() != moment.utcoffset() for moment in instants):
+               moment.astimezone(TORONTO).utcoffset() != moment.utcoffset() for moment in (*instants, sunrise)):
             raise ValueError("Invalid prayer time offset")
-        days[day.isoformat()] = [moment.astimezone(UTC).isoformat() for moment in instants]
+        day_key = day.isoformat()
+        days[day_key] = [moment.astimezone(UTC).isoformat() for moment in instants]
+        sunrises[day_key] = sunrise.astimezone(UTC).isoformat()
     if len(days) != monthrange(year, number)[1]:
         raise ValueError("Incomplete prayer month")
-    return days
+    # Keep the five-value daily rows readable by releases that predate Sunrise.
+    return {**days, "sunrise": sunrises}
 
 
 def time_label(moment: datetime) -> str:
@@ -150,7 +156,11 @@ def prayer_day(db, config: PrayerPreferences, now: datetime, *, include_update=F
     started = ((moment, name) for moment, name in zip(moments, PRAYERS, strict=True) if moment <= current)
     # Before Fajr, the active slot is still the previous day's Isha.
     _, current_name = max(started, key=lambda prayer: prayer[0], default=(None, "Isha"))
-    return PrayerDay(tuple(map(time_label, moments)), current_name, updated_at=updated_at)
+    sunrise = row.days.get("sunrise", {}).get(today.isoformat())
+    return PrayerDay(
+        tuple(map(time_label, moments)), current_name, updated_at=updated_at,
+        sunrise=time_label(datetime.fromisoformat(sunrise)) if sunrise else "--:--",
+    )
 
 
 class PrayerCache:
@@ -170,7 +180,8 @@ class PrayerCache:
             for month in months_to_cache(now):
                 key = (config.cache_key(), month)
                 with database.sessions() as db:
-                    if not force and db.get(PrayerMonth, key):
+                    cached = db.get(PrayerMonth, key)
+                    if not force and cached and "sunrise" in cached.days:
                         continue
                 if not force and key in self.retry_after:
                     success = False

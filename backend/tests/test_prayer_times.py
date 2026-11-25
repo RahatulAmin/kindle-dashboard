@@ -35,10 +35,13 @@ def month_fixtures(month, fajr_hour=6):
 
 
 def schedules(month, fajr_hour=6):
-    return {
-        local.date().isoformat(): [datetime.fromisoformat(value).astimezone(UTC).isoformat() for value in times]
-        for local, times in month_fixtures(month, fajr_hour)
-    }
+    days = {}
+    sunrises = {}
+    for local, times in month_fixtures(month, fajr_hour):
+        day = local.date().isoformat()
+        days[day] = [datetime.fromisoformat(value).astimezone(UTC).isoformat() for value in times]
+        sunrises[day] = local.replace(hour=8, minute=local.day).astimezone(UTC).isoformat()
+    return {**days, "sunrise": sunrises}
 
 
 def test_aladhan_month_timezone_and_calculation_parameters(monkeypatch):
@@ -49,7 +52,10 @@ def test_aladhan_month_timezone_and_calculation_parameters(monkeypatch):
         rows = [{
             "date": {"gregorian": {"date": local.strftime("%d-%m-%Y")}},
             "meta": {"timezone": TORONTO.key},
-            "timings": dict(zip(prayers.PRAYERS, values, strict=True)),
+            "timings": {
+                **dict(zip(prayers.PRAYERS, values, strict=True)),
+                "Sunrise": local.replace(hour=8, minute=local.day).isoformat(),
+            },
         } for local, values in month_fixtures("2026-03")]
         return BytesIO(json.dumps({"code": 200, "data": rows}).encode())
 
@@ -67,6 +73,8 @@ def test_aladhan_month_timezone_and_calculation_parameters(monkeypatch):
     assert result["2026-03-07"][0].startswith("2026-03-07T11:07")
     assert result["2026-03-08"][0].startswith("2026-03-08T10:08")
     assert prayers.time_label(datetime.fromisoformat(result["2026-03-08"][0])) == "6:08 AM"
+    assert result["sunrise"]["2026-03-07"].startswith("2026-03-07T13:07")
+    assert result["sunrise"]["2026-03-08"].startswith("2026-03-08T12:08")
 
 
 def test_current_prayer_through_midnight_and_month_boundary(tmp_path, monkeypatch):
@@ -130,6 +138,20 @@ def test_fall_dst_offline_restart_and_setting_changes(tmp_path, monkeypatch):
         assert prayers.prayer_preferences(session) == initial
         result = prayers.prayer_day(session, initial, now, include_update=True)
         assert result.today[0] == "6:01 AM" and result.current_name == "Fajr" and result.updated_at
+        assert result.sunrise == "8:01 AM"
+        for month in prayers.months_to_cache(now):
+            row = session.get(PrayerMonth, (initial.cache_key(), month))
+            row.days = {day: values for day, values in row.days.items() if day != "sunrise"}
+        session.commit()
+    assert not cache.refresh(reopened, initial, now)
+    with reopened.sessions() as session:
+        legacy = prayers.prayer_day(session, initial, now)
+        assert legacy.sunrise == "--:--" and legacy.today == result.today
+    monkeypatch.setattr(prayers, "fetch_month", fetch)
+    assert prayers.PrayerCache().refresh(reopened, initial, now)
+    with reopened.sessions() as session:
+        assert prayers.prayer_day(session, initial, now).sunrise == "8:01 AM"
+    monkeypatch.setattr(prayers, "fetch_month", offline)
     alternates = initial.model_copy(update={"school": 1})
     assert not cache.refresh(reopened, alternates, now)
     assert not cache.refresh(reopened, alternates, now)
@@ -220,12 +242,15 @@ def test_admin_frame_geometry_and_device_actions(tmp_path, monkeypatch):
 
 def test_same_noninteractive_strip_and_highlight_on_all_pages():
     now = datetime(2026, 11, 25, 12, 30, tzinfo=TORONTO)
-    salat = prayers.PrayerDay(("6:00 AM", "12:00 PM", "3:00 PM", "5:00 PM", "7:00 PM"), "Asr")
+    salat = prayers.PrayerDay(("6:00 AM", "12:00 PM", "3:00 PM", "5:00 PM", "7:00 PM"), "Asr", sunrise="8:00 AM")
     def strip(page, values):
         with Image.open(BytesIO(render_landscape(page, now, "Montréal", Weather("unavailable"), prayers=values))) as png:
             return png.crop((0, PRAYER_Y, WIDTH, NAV_Y))
     strips = [strip(page, salat) for page in ("todo", "calendar", "pomodoro")]
     assert strips[0].tobytes() == strips[1].tobytes() == strips[2].tobytes()
-    assert [strips[0].getpixel((index * WIDTH // 5 + 10, 12)) for index in range(5)] == [255, 255, 0, 255, 255]
+    assert [strips[0].getpixel((index * WIDTH // 6 + 10, 12)) for index in range(6)] == [255, 255, 255, 0, 255, 255]
+    sunrise_cell = (WIDTH // 6 + 1, 0, WIDTH // 3, NAV_Y - PRAYER_Y)
+    legacy = strip("todo", prayers.PrayerDay(salat.today, salat.current_name))
+    assert strips[0].crop(sunrise_cell).tobytes() != legacy.crop(sunrise_cell).tobytes()
     offline = strip("todo", prayers.PrayerDay())
-    assert all(offline.getpixel((index * WIDTH // 5 + 10, 12)) == 255 for index in range(5))
+    assert all(offline.getpixel((index * WIDTH // 6 + 10, 12)) == 255 for index in range(6))
