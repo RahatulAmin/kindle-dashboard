@@ -4,8 +4,10 @@ A self-hosted productivity dashboard for Dashboard NAS. Administrators manage ta
 
 ## KOReader landscape dashboard
 
-The Phase 3A KOReader plugin provides a 1024 × 758 interactive Todo dashboard with Calendar and Pomodoro previews. Use Todo to complete or reopen shared tasks, with updates synchronized to the web administration interface. The existing portrait TRMNL client continues to work.
+Phase 3A is complete and physically verified on the Kindle Paperwhite 2. The KOReader plugin provides a 1024 × 758 interactive Todo dashboard with Calendar and Pomodoro previews. Use Todo to complete or reopen shared tasks, with updates synchronized to the web administration interface. The existing portrait TRMNL client continues to work.
 
+- [Phase 3A release and verified plugin ZIP](https://github.com/RahatulAmin/kindle-dashboard/releases/tag/v0.3.0)
+- [Project roadmap](IMPLEMENTATION_PLAN.md)
 - [Permanent NAS deployment and backups](docs/DEPLOYMENT.md)
 - [KOReader plugin ZIP, installation and device checklist](docs/PHASE3A.md)
 
