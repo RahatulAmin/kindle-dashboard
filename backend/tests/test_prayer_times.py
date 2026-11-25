@@ -95,9 +95,15 @@ def test_current_prayer_through_midnight_and_month_boundary(tmp_path, monkeypatc
         for name, hour in zip(prayers.PRAYERS, (6, 12, 15, 17, 19), strict=True):
             just_before = midnight.replace(hour=hour, minute=0, second=59)
             onset = midnight.replace(hour=hour, minute=1)
-            assert prayers.prayer_day(session, config, just_before).current_name == previous
+            expected = None if name == "Dhuhr" else previous
+            assert prayers.prayer_day(session, config, just_before).current_name == expected
             assert prayers.prayer_day(session, config, onset).current_name == name
             previous = name
+        sunrise = midnight.replace(hour=8, minute=1)
+        assert prayers.prayer_day(session, config, sunrise.replace(minute=0, second=59)).current_name == "Fajr"
+        assert prayers.prayer_day(session, config, sunrise).current_name == "Sunrise"
+        assert prayers.prayer_day(session, config, sunrise.replace(minute=30, second=59)).current_name == "Sunrise"
+        assert prayers.prayer_day(session, config, sunrise.replace(minute=31)).current_name is None
         session.delete(session.get(PrayerMonth, (config.cache_key(), "2026-12")))
         session.commit()
         assert prayers.prayer_day(session, config, midnight_eve).current_name == "Isha"
@@ -249,6 +255,12 @@ def test_same_noninteractive_strip_and_highlight_on_all_pages():
     strips = [strip(page, salat) for page in ("todo", "calendar", "pomodoro")]
     assert strips[0].tobytes() == strips[1].tobytes() == strips[2].tobytes()
     assert [strips[0].getpixel((index * WIDTH // 6 + 10, 12)) for index in range(6)] == [255, 255, 255, 0, 255, 255]
+    sunrise_selected = strip("todo", prayers.PrayerDay(salat.today, "Sunrise", sunrise=salat.sunrise))
+    assert [sunrise_selected.getpixel((index * WIDTH // 6 + 10, 12)) for index in range(6)] == [
+        255, 0, 255, 255, 255, 255,
+    ]
+    after_sunrise = strip("todo", prayers.PrayerDay(salat.today, sunrise=salat.sunrise))
+    assert all(after_sunrise.getpixel((index * WIDTH // 6 + 10, 12)) == 255 for index in range(6))
     sunrise_cell = (WIDTH // 6 + 1, 0, WIDTH // 3, NAV_Y - PRAYER_Y)
     legacy = strip("todo", prayers.PrayerDay(salat.today, salat.current_name))
     assert strips[0].crop(sunrise_cell).tobytes() != legacy.crop(sunrise_cell).tobytes()

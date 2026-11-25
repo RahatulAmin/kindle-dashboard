@@ -156,10 +156,15 @@ def prayer_day(db, config: PrayerPreferences, now: datetime, *, include_update=F
     started = ((moment, name) for moment, name in zip(moments, PRAYERS, strict=True) if moment <= current)
     # Before Fajr, the active slot is still the previous day's Isha.
     _, current_name = max(started, key=lambda prayer: prayer[0], default=(None, "Isha"))
-    sunrise = row.days.get("sunrise", {}).get(today.isoformat())
+    sunrise_value = row.days.get("sunrise", {}).get(today.isoformat())
+    sunrise = datetime.fromisoformat(sunrise_value) if sunrise_value else None
+    dhuhr = moments[PRAYERS.index("Dhuhr")]
+    if sunrise is not None and sunrise <= current < dhuhr:
+        current_name = "Sunrise" if current < sunrise + timedelta(minutes=30) else None
+
     return PrayerDay(
         tuple(map(time_label, moments)), current_name, updated_at=updated_at,
-        sunrise=time_label(datetime.fromisoformat(sunrise)) if sunrise else "--:--",
+        sunrise=time_label(sunrise) if sunrise else "--:--",
     )
 
 
