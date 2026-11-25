@@ -317,6 +317,7 @@ def test_pagination_footer_has_clearance_and_tap_padding():
         assert visible.x - hit.x == visible.y - hit.y == 12
         assert hit.bounds[2] - visible.bounds[2] == hit.bounds[3] - visible.bounds[3] == 12
         center = visible.x + visible.w // 2
-        assert preview.getpixel((center, visible.y)) == 0
+        assert preview.getpixel((center, visible.y)) == 75
+        assert preview.getpixel((center, visible.y + 1)) == 255
         assert preview.getpixel((center, hit.y)) == 255
     assert controls[1][1].x - controls[0][1].bounds[2] > 150

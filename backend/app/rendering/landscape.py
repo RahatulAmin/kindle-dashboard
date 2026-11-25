@@ -172,7 +172,7 @@ def todo(draw, tasks, page_number, page_count):
         label(draw, (MAIN_CENTER, 626), f"{page_number} of {page_count}", 18,
               "Medium", SECONDARY, "ms")
         for target, _, box, text in pagination_controls(page_number, page_count):
-            draw.rounded_rectangle(box.bounds, radius=8, outline=INK, width=2)
+            draw.rounded_rectangle(box.bounds, radius=8, outline=SECONDARY, width=1)
             center_x, center_y = box.x + box.w // 2, box.y + box.h // 2
             previous = target < page_number
             label(draw, (center_x + (10 if previous else -10), center_y + 8),
