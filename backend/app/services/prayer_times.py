@@ -73,6 +73,10 @@ class PrayerDay:
     updated_at: str | None = None
     sunrise: str = "--:--"
 
+    def display_times(self) -> dict[str, str]:
+        fajr, *later = zip(PRAYERS, self.today, strict=True)
+        return dict((fajr, ("Sunrise", self.sunrise), *later))
+
 
 def prayer_preferences(db) -> PrayerPreferences:
     row = db.get(PrayerSettings, 1)

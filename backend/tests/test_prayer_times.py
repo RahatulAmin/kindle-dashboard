@@ -200,9 +200,14 @@ def test_admin_frame_geometry_and_device_actions(tmp_path, monkeypatch):
         assert sum(region["action"] == "complete" for region in plain["regions"]) == task_page_size(False) == 6
         enabled = {**defaults, "enabled": True, "school": 1}
         assert client.put(location, headers=csrf, json=enabled).status_code == 200
-        assert client.post(location + "/refresh", headers=csrf).status_code == 200
+        refreshed = client.post(location + "/refresh", headers=csrf)
+        assert refreshed.status_code == 200
+        schedule = refreshed.json()["data"]
+        assert list(schedule["today"]) == ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"]
+        day = date.fromisoformat(schedule["date"]).day
+        assert schedule["today"]["Sunrise"] == f"8:{day:02} AM"
         view = client.get(location).json()["data"]
-        assert view["last_updated_at"] and view["today"]["Fajr"] != "--:--"
+        assert view["last_updated_at"] and view["today"]["Sunrise"] != "--:--"
         values = client.get(url + "?number=2", headers=device).json()
         action_regions = [region for region in values["regions"] if region["action"] == "complete"]
         assert len(action_regions) == task_page_size(True) == 5

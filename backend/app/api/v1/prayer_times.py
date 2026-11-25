@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from app.services.auth import DB, require_admin
 from app.services.dashboard import TORONTO
 from app.services.prayer_times import (
-    METHODS, PRAYERS, PrayerPreferences, prayer_day, prayer_preferences, save_prayer_preferences,
+    METHODS, PrayerPreferences, prayer_day, prayer_preferences, save_prayer_preferences,
 )
 
 router = APIRouter(prefix="/api/v1/prayer-times", dependencies=[Depends(require_admin)])
@@ -17,7 +17,7 @@ def status(db, config, now):
         "preferences": config,
         "methods": METHODS,
         "date": now.astimezone(TORONTO).date(),
-        "today": dict(zip(PRAYERS, result.today, strict=True)),
+        "today": result.display_times(),
         "last_updated_at": result.updated_at,
     }}
 

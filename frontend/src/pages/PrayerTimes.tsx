@@ -3,6 +3,8 @@ import { api, errorMessage, useResource } from '../services/admin'
 
 const names = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const
 type Prayer = typeof names[number]
+const scheduleNames = [names[0], 'Sunrise', ...names.slice(1)] as const
+type ScheduleName = typeof scheduleNames[number]
 type Settings = {
   enabled: boolean
   city: string
@@ -16,7 +18,7 @@ type PrayerStatus = {
   preferences: Settings
   methods: Record<string, string>
   date: string
-  today: Record<Prayer, string>
+  today: Record<ScheduleName, string>
   last_updated_at: string | null
 }
 
@@ -27,7 +29,7 @@ export function PrayerTimes({ token }: { token: string }) {
   const [feedback, setFeedback] = useState({ message: '', error: false })
   const value = draft ?? data?.preferences
   const dirty = draft !== undefined
-  const awaitingSchedule = data?.preferences.school != null && data.today.Fajr === '--:--'
+  const awaitingSchedule = data?.preferences.school != null && data.today.Sunrise === '--:--'
 
   useEffect(() => {
     if (!awaitingSchedule || busy) return
@@ -139,8 +141,8 @@ export function PrayerTimes({ token }: { token: string }) {
       <section className="panel mt-5" aria-labelledby="prayer-preview">
         <h2 id="prayer-preview" className="text-lg font-semibold">Today’s prayer times</h2>
         <p className="mt-1 text-sm text-slate-600">{data.date} · America/Toronto</p>
-        <dl className="my-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {names.map(name => <div key={name}>
+        <dl className="my-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {scheduleNames.map(name => <div key={name}>
             <dt>{name}</dt><dd className="font-semibold tabular-nums">{data.today[name]}</dd>
           </div>)}
         </dl>

@@ -14,7 +14,7 @@ from app.rendering.landscape_layout import (
 )
 from app.rendering.typography import font
 from app.services.dashboard import TORONTO
-from app.services.prayer_times import PRAYERS, PrayerDay
+from app.services.prayer_times import PrayerDay
 from app.services.weather import Weather
 
 INK, SECONDARY, RULE = 0, 75, 195
@@ -190,9 +190,8 @@ def todo(draw, tasks, page_number, page_count, prayer_strip):
 
 def draw_prayer_strip(draw, result: PrayerDay):
     draw.line((0, PRAYER_Y, WIDTH - 1, PRAYER_Y), fill=RULE)
-    entries = list(zip(PRAYERS, result.today, strict=True))
-    entries.insert(1, ("Sunrise", result.sunrise))
-    for index, (name, timing) in enumerate(entries):
+    entries = result.display_times()
+    for index, (name, timing) in enumerate(entries.items()):
         left, right = index * WIDTH // len(entries), (index + 1) * WIDTH // len(entries)
         center = (left + right) // 2
         selected = name == result.current_name
