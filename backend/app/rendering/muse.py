@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 import unicodedata
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from app.rendering.landscape_layout import NAV_Y, PRAYER_Y, WIDTH
 from app.rendering.typography import font
@@ -23,24 +23,21 @@ PRIORITY_GAP = 15
 
 
 @lru_cache(maxsize=2)
-def symbol_mask(size: int) -> Image.Image | None:
-    asset = Path(__file__).with_name("muse-symbol.png")
-    if not asset.is_file():
-        return None
-    with Image.open(asset) as source:
-        mask = source.convert("RGBA").getchannel("A")
-        mask.thumbnail((size, size), Image.Resampling.LANCZOS)
-        return mask
+def symbol_mask(size: int) -> Image.Image:
+    with Image.open(Path(__file__).with_name("muse-logo.png")) as source:
+        red, _, blue = source.convert("RGB").split()
+        # The blue excess removes the neutral tile and retains the antialiased stroke.
+        mask = ImageChops.subtract(blue, red).point(lambda value: min(255, round(value * 255 / 220)))
+    mask = mask.crop(mask.getbbox())
+    mask.thumbnail((size, size), Image.Resampling.LANCZOS)
+    return mask
 
 
-def draw_symbol(image: Image.Image, x: int, y: int, size: int, ink: int) -> bool:
+def draw_symbol(image: Image.Image, x: int, y: int, size: int, ink: int) -> None:
     mask = symbol_mask(size)
-    if mask is None:
-        return False
     x += (size - mask.width) // 2
     y += (size - mask.height) // 2
     image.paste(ink, (x, y, x + mask.width, y + mask.height), mask)
-    return True
 
 
 def wrap_text(text: str, size: int, width: int, weight: str = "Regular") -> tuple[str, ...]:

@@ -304,6 +304,15 @@ def test_briefing_validation_and_landscape_regions(dashboard, monkeypatch):
         if page != "muse":
             assert image.crop((0, 0, WIDTH, NAV_Y)).tobytes() == initial[page][1].crop((0, 0, WIDTH, NAV_Y)).tobytes()
 
+    tab_symbol = (muse_tab.x + 98, 678, muse_tab.x + 132, 712)
+    inactive_symbol = deck["todo"][1].crop(tab_symbol)
+    selected_symbol = deck["muse"][1].crop(tab_symbol)
+    assert inactive_symbol.getextrema() == (0, 255)
+    assert inactive_symbol.getpixel((0, 0)) == 255
+    assert all(abs(a + b - 255) <= 1 for a, b in zip(
+        inactive_symbol.tobytes(), selected_symbol.tobytes(), strict=True,
+    ))
+    assert deck["muse"][1].crop((64, 29, 106, 71)).getextrema() == (0, 255)
     inactive = deck["todo"][1].crop(badge)
     active = deck["muse"][1].crop(badge)
     assert all(abs(a + b - 255) <= 1 for a, b in zip(inactive.tobytes(), active.tobytes(), strict=True))

@@ -210,8 +210,8 @@ def draw_prayer_strip(draw, result: PrayerDay):
 
 
 def draw_muse(image, draw, layout: MuseLayout, number: int, prayer_strip: bool):
-    has_symbol = draw_symbol(image, CONTENT_X, 29, 42, INK)
-    label(draw, (CONTENT_X + (56 if has_symbol else 0), 65), "Muse", 38, "Bold")
+    draw_symbol(image, CONTENT_X, 29, 42, INK)
+    label(draw, (CONTENT_X + 56, 65), "Muse", 38, "Bold")
     draw.line((CONTENT_X, 82, WIDTH - CONTENT_X, 82), fill=RULE)
     if not layout.title:
         label(draw, (CONTENT_X, 161), "No briefing available", 35, "Medium", SECONDARY)
@@ -248,8 +248,8 @@ def draw_navigation(image, draw, page: Page, expanded: bool, priorities: int):
         elif index:
             draw.line((box.x, NAV_Y, box.x, HEIGHT - 1), fill=RULE)
         if tab == "muse":
-            has_symbol = draw_symbol(image, center - 17, 678, 34, color)
-            baseline = 738 if has_symbol else 720
+            draw_symbol(image, center - 17, 678, 34, color)
+            baseline = 738
             label(draw, (center, baseline), "Muse", 22, "Medium", color, "ms")
             if priorities:
                 x, y = center + 53, baseline - 9
