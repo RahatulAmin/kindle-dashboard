@@ -9,9 +9,13 @@ from PIL import Image, ImageDraw
 from app.rendering.dashboard import fit_line
 from app.schemas.assistant import BriefingOutput
 from app.rendering.landscape_layout import (
-    CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, HEIGHT, LEFT, MAIN_CENTER, NAV_Y,
+    CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, HEIGHT, LEFT, MAIN_CENTER, MUSE_TABS, NAV_Y, POWER_BOX,
     PANEL_CENTER, PANEL_INSET, PANEL_TEXT_WIDTH, PANEL_X, PRAYER_Y, RIGHT,
-    TABS, TAB_LABELS, TASK_TEXT_X, WEATHER_ICON_Y, WIDTH, Page, pagination_controls, row_box, tab_box,
+    TABS, TAB_LABELS, TASK_TEXT_X, WEATHER_ICON_Y, WIDTH, Page, muse_pagination, pagination_controls, row_box, tab_box,
+)
+from app.rendering.muse import (
+    CONTENT_X, PRIORITY_SIZE, PRIORITY_X, TITLE_SIZE, TITLE_STEP, TITLE_Y,
+    MuseLayout, draw_symbol, layout_briefing,
 )
 from app.rendering.typography import font
 from app.services.dashboard import TORONTO
@@ -120,37 +124,7 @@ def clock_size(draw, time):
     return size
 
 
-def briefing_panel(draw, weather, location, briefing):
-    left, right = PANEL_X + PANEL_INSET, WIDTH - PANEL_INSET
-    weather_icon(draw, weather.condition if weather.temperature is not None else None, 408, left + 35)
-    detail_x = left + 88
-    weather_width = right - detail_x
-    if weather.temperature is None:
-        label(draw, (detail_x, 411), "Weather unavailable", 20, "Medium", SECONDARY)
-    else:
-        temp = temperature(weather.temperature) + "C"
-        label(draw, (detail_x, 402), temp, 30, "Bold")
-        detail = weather.condition or "Unknown"
-        if weather.status == "stale":
-            detail += " · Last known"
-        label(draw, (detail_x, 420), fit_line(draw, detail, font(14), weather_width), 14)
-        if weather.high is not None and weather.low is not None:
-            label(draw, (detail_x, 437), f"H {temperature(weather.high)} / L {temperature(weather.low)}",
-                  14, "Medium", SECONDARY)
-    name = fit_line(draw, unicodedata.normalize("NFC", location), font(13), weather_width)
-    label(draw, (detail_x, 452), name, 13, fill=SECONDARY)
-    draw.line((left, 460, right, 460), fill=RULE)
-    title = fit_line(draw, unicodedata.normalize("NFC", briefing.title), font(19, "Bold"), PANEL_TEXT_WIDTH)
-    label(draw, (left, 480), title, 19, "Bold")
-    moment = datetime.fromisoformat(briefing.updated_at)
-    day, month, _, time, meridiem = date_clock(moment)
-    label(draw, (left, 496), f"Updated {month.title()} {day}, {time} {meridiem}", 13, fill=SECONDARY)
-    for index, line in enumerate(briefing.lines):
-        text = fit_line(draw, unicodedata.normalize("NFC", line), font(16), PANEL_TEXT_WIDTH)
-        label(draw, (left, 513 + 16 * index), text, 16)
-
-
-def information(draw, now, location, weather, compact=False, briefing=None):
+def information(draw, now, location, weather, compact=False):
     day, month, weekday, time, meridiem = date_clock(now)
     label(draw, (PANEL_CENTER, 145), time, clock_size(draw, time), "Bold", anchor="ms")
     label(draw, (PANEL_CENTER, 183), meridiem, 27, "Medium", anchor="ms")
@@ -158,9 +132,6 @@ def information(draw, now, location, weather, compact=False, briefing=None):
     label(draw, (PANEL_CENTER, 349), weekday, 27, "Medium", SECONDARY, "ms")
     for y in (CLOCK_DIVIDER_Y, DATE_DIVIDER_Y):
         draw.line((PANEL_X + PANEL_INSET, y, WIDTH - PANEL_INSET, y), fill=RULE)
-    if briefing is not None:
-        briefing_panel(draw, weather, location, briefing)
-        return
     icon_y = 412 if compact else WEATHER_ICON_Y
     temperature_y, condition_y, range_y, stale_y, location_y = (
         (499, 525, 550, 573, 591) if compact else (508, 543, 578, 605, 640)
@@ -238,16 +209,78 @@ def draw_prayer_strip(draw, result: PrayerDay):
     draw.line((0, NAV_Y - 1, WIDTH - 1, NAV_Y - 1), fill=RULE)
 
 
+def draw_muse(image, draw, layout: MuseLayout, number: int, prayer_strip: bool):
+    has_symbol = draw_symbol(image, CONTENT_X, 29, 42, INK)
+    label(draw, (CONTENT_X + (56 if has_symbol else 0), 65), "Muse", 38, "Bold")
+    draw.line((CONTENT_X, 82, WIDTH - CONTENT_X, 82), fill=RULE)
+    if not layout.title:
+        label(draw, (CONTENT_X, 161), "No briefing available", 35, "Medium", SECONDARY)
+        return
+
+    for index, text in enumerate(layout.title):
+        label(draw, (CONTENT_X, TITLE_Y + index * TITLE_STEP), text, TITLE_SIZE, "Bold")
+    label(draw, (CONTENT_X, layout.updated_y), layout.updated, 21, "Medium", SECONDARY)
+    rows = layout.pages[number - 1]
+    if not rows:
+        label(draw, (CONTENT_X, layout.updated_y + 56), "No priorities", 30, "Medium", SECONDARY)
+    for row in rows:
+        if row.starts_priority:
+            y = row.baseline - 10
+            draw.ellipse((CONTENT_X + 7, y - 4, CONTENT_X + 15, y + 4), fill=INK)
+        label(draw, (PRIORITY_X, row.baseline), row.text, PRIORITY_SIZE)
+    if len(layout.pages) > 1:
+        bottom = PRAYER_Y if prayer_strip else NAV_Y
+        label(draw, (WIDTH // 2, bottom - 31), f"{number} of {len(layout.pages)}",
+              23, "Medium", SECONDARY, "ms")
+        for _, box, text in muse_pagination(number, len(layout.pages), prayer_strip):
+            draw.rounded_rectangle(box.bounds, radius=9, outline=INK, width=2)
+            label(draw, (box.x + box.w // 2, box.y + 43), text, 25, "Bold", INK, "ms")
+
+
+def draw_navigation(image, draw, page: Page, expanded: bool, priorities: int):
+    for index, tab in enumerate(MUSE_TABS if expanded else TABS):
+        box = tab_box(index, expanded=expanded)
+        center = box.x + box.w // 2
+        selected = tab == page
+        color = 255 if selected else INK
+        if selected:
+            draw.rectangle(box.bounds, fill=INK)
+        elif index:
+            draw.line((box.x, NAV_Y, box.x, HEIGHT - 1), fill=RULE)
+        if tab == "muse":
+            has_symbol = draw_symbol(image, center - 17, 678, 34, color)
+            baseline = 738 if has_symbol else 720
+            label(draw, (center, baseline), "Muse", 22, "Medium", color, "ms")
+            if priorities:
+                x, y = center + 53, baseline - 9
+                draw.ellipse((x - 14, y - 14, x + 14, y + 14), fill=color)
+                label(draw, (x, y + 6), str(priorities), 16, "Bold", INK if selected else 255, "ms")
+        else:
+            icon(draw, tab, center, 695, color)
+            label(draw, (center, 738), TAB_LABELS[tab], 22, "Medium", color, "ms")
+    if expanded:
+        x, y = POWER_BOX.x + POWER_BOX.w // 2, NAV_Y + POWER_BOX.h // 2 + 2
+        draw.line((POWER_BOX.x, NAV_Y, POWER_BOX.x, HEIGHT - 1), fill=RULE)
+        draw.arc((x - 17, y - 17, x + 17, y + 17), 309, 591, fill=INK, width=4)
+        draw.line((x, y - 23, x, y - 4), fill=INK, width=4)
+    draw.line((0, NAV_Y, WIDTH - 1, NAV_Y), fill=INK)
+
+
 def render_landscape(page: Page, now: datetime, location: str, weather: Weather,
                      tasks: list[TaskRow] | None = None, page_number: int = 1,
                      page_count: int = 1, *, battery: int | None = None, wifi: bool = False,
-                     prayers: PrayerDay | None = None, briefing: BriefingOutput | None = None) -> bytes:
+                     prayers: PrayerDay | None = None, briefing: BriefingOutput | None = None,
+                     expanded: bool = False, muse_layout: MuseLayout | None = None) -> bytes:
     image = Image.new("L", (WIDTH, HEIGHT), 255)
     draw = ImageDraw.Draw(image)
-    draw.line((PANEL_X, 0, PANEL_X, PRAYER_Y if prayers is not None else NAV_Y), fill=RULE)
-    draw.line((LEFT, 110, RIGHT, 110), fill=RULE)
-    label(draw, (LEFT, 80), TAB_LABELS[page], 47, "Bold")
-    if page == "todo":
+    if page != "muse":
+        draw.line((PANEL_X, 0, PANEL_X, PRAYER_Y if prayers is not None else NAV_Y), fill=RULE)
+        draw.line((LEFT, 110, RIGHT, 110), fill=RULE)
+        label(draw, (LEFT, 80), TAB_LABELS[page], 47, "Bold")
+    if page == "muse":
+        layout = muse_layout or layout_briefing(briefing, prayers is not None)
+        draw_muse(image, draw, layout, min(page_number, len(layout.pages)), prayers is not None)
+    elif page == "todo":
         todo(draw, tasks or [], page_number, page_count, prayers is not None)
     elif page == "calendar":
         icon(draw, "calendar", MAIN_CENTER, 282)
@@ -263,22 +296,12 @@ def render_landscape(page: Page, now: datetime, location: str, weather: Weather,
             draw.rounded_rectangle((x-59, 426, x+59, 479), 4, outline=RULE)
             label(draw, (x, 461), text, 22, "Medium", SECONDARY, "ms")
         label(draw, (MAIN_CENTER, 530), "Preview · Timer controls disabled", 19, fill=SECONDARY, anchor="ms")
-    information(draw, now, location, weather, compact=prayers is not None,
-                briefing=briefing if page == "todo" else None)
-    device_indicators(draw, battery, wifi)
+    if page != "muse":
+        information(draw, now, location, weather, compact=prayers is not None)
+        device_indicators(draw, battery, wifi)
     if prayers is not None:
         draw_prayer_strip(draw, prayers)
-    for index, tab in enumerate(TABS):
-        box = tab_box(index)
-        center = box.x + box.w // 2
-        color = 255 if tab == page else INK
-        if tab == page:
-            draw.rectangle(box.bounds, fill=INK)
-        elif index:
-            draw.line((box.x, NAV_Y, box.x, HEIGHT-1), fill=RULE)
-        icon(draw, tab, center, 695, color)
-        label(draw, (center, 738), TAB_LABELS[tab], 22, "Medium", color, "ms")
-    draw.line((0, NAV_Y, WIDTH-1, NAV_Y), fill=INK)
+    draw_navigation(image, draw, page, expanded, len(briefing.lines) if briefing else 0)
     output = BytesIO()
     image.save(output, "PNG", compress_level=3)
     return output.getvalue()

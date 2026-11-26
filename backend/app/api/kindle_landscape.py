@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import hmac
 import json
 from time import time
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
@@ -18,8 +18,9 @@ from app.models.dashboard import Task
 from app.rendering.kindle import NO_CACHE
 from app.rendering.landscape import TaskRow, render_landscape
 from app.rendering.landscape_layout import (
-    HEIGHT, TABS, WIDTH, Page, pagination_controls, row_box, tab_box, task_page_size,
+    HEIGHT, MUSE_TABS, POWER_BOX, TABS, WIDTH, Page, muse_pagination, pagination_controls, row_box, tab_box, task_page_size,
 )
+from app.rendering.muse import layout_briefing
 from app.schemas.assistant import BriefingOutput
 from app.schemas.dashboard import InputModel
 from app.services.auth import DB
@@ -72,7 +73,11 @@ def validate_capability(key, change, task_id):
 def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page: Page = "todo",
                     number: Annotated[int, Query(ge=1, le=2_147_483_647)] = 1,
                     battery: Annotated[int | None, Header(alias="percent-charged", ge=0, le=100)] = None,
-                    wifi: Annotated[str | None, Header(alias="dashboard-wifi")] = None):
+                    wifi: Annotated[str | None, Header(alias="dashboard-wifi")] = None,
+                    ui: Literal["1", "2"] = "1"):
+    expanded = ui == "2"
+    if page == "muse" and not expanded:
+        raise HTTPException(404, "Muse requires the updated landscape client.", headers=NO_CACHE)
     # Keep the count and rows on one SQLite read snapshot, then release it before weather and drawing.
     db.connection().exec_driver_sql("BEGIN")
     config = sharing(db)
@@ -84,9 +89,11 @@ def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page:
     expires = int(time()) + FRAME_LIFETIME
     key = request.app.state.landscape_signing_key
     regions = [
-        {**asdict(tab_box(index)), "action": "navigate", "page": tab, "number": 1}
-        for index, tab in enumerate(TABS)
+        {**asdict(tab_box(index, expanded=expanded)), "action": "navigate", "page": tab, "number": 1}
+        for index, tab in enumerate(MUSE_TABS if expanded else TABS)
     ]
+    if expanded:
+        regions.append({**asdict(POWER_BOX), "action": "suspend"})
     tasks = []
     page_count, page_number = 1, 1
     if page == "todo" and todo_enabled(config):
@@ -104,19 +111,26 @@ def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page:
         for target, hit, _, _ in pagination_controls(page_number, page_count, salat.enabled):
             regions.append({**asdict(hit), "action": "navigate", "page": page, "number": target})
     briefing = None
-    if page == "todo" and any(widget.key == "briefing" and widget.visible for widget in config.widgets):
+    if expanded and any(widget.key == "briefing" and widget.visible for widget in config.widgets):
         record = db.get(Briefing, 1)
         if record is not None:
             briefing = BriefingOutput.model_validate(record)
     db.rollback()
+    muse_layout = None
+    if page == "muse":
+        muse_layout = layout_briefing(briefing, salat.enabled)
+        page_count = len(muse_layout.pages)
+        page_number = min(number, page_count)
+        for target, hit, _ in muse_pagination(page_number, page_count, salat.enabled):
+            regions.append({**asdict(hit), "action": "navigate", "page": "muse", "number": target})
     if salat.enabled:
         background.add_task(request.app.state.prayers.refresh, request.app.state.database, salat, now)
     weather = Weather("unavailable")
-    if any(widget.key == "weather" and widget.visible for widget in config.widgets):
+    if page != "muse" and any(widget.key == "weather" and widget.visible for widget in config.widgets):
         weather = request.app.state.weather.get(config.weather)
     png = render_landscape(page, now, config.weather.name, weather, tasks,
                            page_number, page_count, battery=battery, wifi=wifi == "connected",
-                           prayers=prayers, briefing=briefing)
+                           prayers=prayers, briefing=briefing, expanded=expanded, muse_layout=muse_layout)
     return JSONResponse({
         "filename": f"landscape-{frame_id}.png", "width": WIDTH, "height": HEIGHT,
         "refresh_rate": REFRESH_SECONDS, "page": page, "number": page_number,

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-Page = Literal["todo", "calendar", "pomodoro"]
+Page = Literal["todo", "calendar", "pomodoro", "muse"]
 WIDTH, HEIGHT = 1024, 758
 PANEL_X, NAV_Y = 635, 666
 PRAYER_HEIGHT = 64
@@ -17,7 +17,9 @@ CLOCK_DIVIDER_Y, DATE_DIVIDER_Y = 208, 368
 WEATHER_ICON_Y = 418
 ROWS_Y, ROW_HEIGHT, PAGE_SIZE = 121, 75, 6
 TABS: tuple[Page, ...] = ("todo", "calendar", "pomodoro")
-TAB_LABELS = {"todo": "Todo", "calendar": "Calendar", "pomodoro": "Pomodoro"}
+MUSE_TABS: tuple[Page, ...] = (*TABS, "muse")
+TAB_WIDTH = 230
+TAB_LABELS = {"todo": "Todo", "calendar": "Calendar", "pomodoro": "Pomodoro", "muse": "Muse"}
 
 
 @dataclass(frozen=True)
@@ -32,8 +34,10 @@ class Box:
         return self.x, self.y, self.x + self.w - 1, self.y + self.h - 1
 
 
-def tab_box(index: int) -> Box:
-    start, stop = index * WIDTH // 3, (index + 1) * WIDTH // 3
+def tab_box(index: int, *, expanded: bool = False) -> Box:
+    if expanded:
+        return Box(index * TAB_WIDTH, NAV_Y, TAB_WIDTH, HEIGHT - NAV_Y)
+    start, stop = index * WIDTH // len(TABS), (index + 1) * WIDTH // len(TABS)
     return Box(start, NAV_Y, stop - start, HEIGHT - NAV_Y)
 
 
@@ -57,3 +61,13 @@ def pagination_controls(number: int, count: int, prayer_strip: bool = False):
                 hit = Box(hit.x, hit.y - PRAYER_HEIGHT, hit.w, hit.h)
             visible = Box(hit.x + 12, hit.y + 12, hit.w - 24, hit.h - 24)
             yield target, hit, visible, text
+
+
+POWER_BOX = Box(len(MUSE_TABS) * TAB_WIDTH, NAV_Y, WIDTH - len(MUSE_TABS) * TAB_WIDTH, HEIGHT - NAV_Y)
+
+
+def muse_pagination(number: int, count: int, prayer_strip: bool):
+    bottom = PRAYER_Y if prayer_strip else NAV_Y
+    for target, x, text in ((number - 1, LEFT, "Previous"), (number + 1, WIDTH - LEFT - 206, "Next")):
+        if 1 <= target <= count:
+            yield target, Box(x, bottom - 76, 206, 66), text

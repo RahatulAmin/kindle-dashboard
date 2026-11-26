@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 path.insert(0, str(ROOT / "backend"))
 
 from app.rendering.landscape import TaskRow, render_landscape
+from app.rendering.muse import layout_briefing
 from app.schemas.assistant import BriefingOutput
 from app.services.dashboard import TORONTO
 from app.services.prayer_times import PrayerDay
@@ -30,19 +31,32 @@ def main():
         "Tomorrow: Montréal train at 8:15 AM.",
     ], updated_at=updated)
     maximum = BriefingOutput(
-        title="Long briefing title for layout review".ljust(80, "!"),
-        lines=[(f"{index}. This long sample line demonstrates how the Kindle truncates a full-length briefing line.").ljust(100, "!")
-               for index in range(1, 7)],
+        title="A Weekly release priorities and commitments for the project coordination meeting",
+        lines=[
+            "Coordinate the daily release review, confirm owners for open decisions, and update the shared notes.",
+            "Review the supplier schedule and confirm that the revised delivery dates fit the project milestones.",
+            "Prepare the workshop agenda, share the outline with reviewers, and confirm room access before lunch.",
+            "Check the remaining accessibility findings and document the fixes that are ready for a further pass.",
+            "Collect the budget updates from each pod and summarize the outstanding approvals before the meeting.",
+            "Confirm the train reservation, share the departure time, and pack the materials for tomorrow's tour.",
+        ],
         updated_at=updated,
     )
-    for name, page, value in (
-        ("todo-briefing", "todo", briefing), ("todo-empty", "todo", None),
-        ("todo-maximum", "todo", maximum), ("calendar", "calendar", None), ("pomodoro", "pomodoro", None),
-    ):
+    assert len(maximum.title) == 80 and all(len(line) == 100 for line in maximum.lines)
+    examples = [
+        ("todo-briefing", "todo", briefing, 2), ("todo-empty", "todo", None, 2),
+        ("todo-maximum", "todo", maximum, 2), ("calendar", "calendar", briefing, 1),
+        ("pomodoro", "pomodoro", briefing, 1), ("muse", "muse", briefing, 1),
+        ("muse-empty", "muse", None, 1),
+    ]
+    max_pages = layout_briefing(maximum, True).pages
+    examples.extend((f"muse-maximum-{number}", "muse", maximum, number)
+                    for number in range(1, len(max_pages) + 1))
+    for name, page, value, number in examples:
         (output / f"{name}.png").write_bytes(render_landscape(
             page, now, "Montréal, Québec", weather, tasks if page == "todo" else None,
-            page_number=2 if page == "todo" else 1, page_count=3 if page == "todo" else 1,
-            prayers=prayers, briefing=value,
+            page_number=number, page_count=3 if page == "todo" else 1,
+            prayers=prayers, briefing=value, expanded=True,
         ))
 
 

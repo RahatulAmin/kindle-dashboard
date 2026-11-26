@@ -68,7 +68,7 @@ function WidgetForm({ initial, save, busy }: {
       event.preventDefault()
       void save({ ...initial, widgets })
     }}>
-      <p className="text-slate-700">The portrait dashboard follows this order. Briefing sits below weather on landscape Todo.</p>
+      <p className="text-slate-700">The portrait dashboard follows this order. Briefing appears on the Muse tab of the landscape dashboard.</p>
       <ol className="divide-y divide-slate-200">
         {widgets.map((widget, index) => <li key={widget.key} className="grid gap-3 py-4 sm:grid-cols-[1fr_8rem_auto]">
           <label className="self-center"><input type="checkbox" checked={widget.visible} onChange={event => change(widget.key, { visible: event.target.checked })} /> {widgetNames[widget.key]}</label>

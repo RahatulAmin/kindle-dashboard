@@ -1,7 +1,9 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from dataclasses import asdict
 from io import BytesIO
+from itertools import combinations
 import json
 from secrets import token_urlsafe
 from threading import Barrier
@@ -21,7 +23,9 @@ from app.db.database import BACKEND, Database
 from app.main import create_app
 from app.models.assistant import ApiAudit, ApiToken
 from app.models.dashboard import Task
-from app.rendering.landscape_layout import HEIGHT, LEFT, PANEL_X, PRAYER_Y, WIDTH
+from app.rendering.landscape_layout import HEIGHT, LEFT, MUSE_TABS, NAV_Y, POWER_BOX, PRAYER_Y, WIDTH, tab_box
+from app.rendering.muse import layout_briefing
+from app.schemas.assistant import BriefingOutput
 from app.schemas.dashboard import Preferences
 from app.services import entry_sync
 from app.services.assistant import SCOPES, timestamp
@@ -250,13 +254,16 @@ def test_briefing_validation_and_landscape_regions(dashboard, monkeypatch):
     for index in range(12):
         assert client.post(PATH + "/tasks", headers=csrf, json={"title": f"Task {index}"}).status_code == 201
 
-    def frame(page):
-        data = client.get("/api/kindle/landscape/frame", headers=DEVICE, params={"page": page, "number": 2}).json()
+    def frame(page, number=2, expanded=True):
+        data = client.get("/api/kindle/landscape/frame", headers=DEVICE, params={
+            "page": page, "number": number, "ui": "2" if expanded else "1",
+        }).json()
         with Image.open(BytesIO(base64.b64decode(data["png"]))) as image:
             assert image.size == (WIDTH, HEIGHT) and image.mode == "L"
-            return data["regions"], image.copy()
+            return data["regions"], image.copy(), data["number"]
 
-    initial = {page: frame(page) for page in ("todo", "calendar", "pomodoro")}
+    assert client.get("/api/kindle/landscape/frame", headers=DEVICE, params={"page": "muse"}).status_code == 404
+    initial = {page: frame(page) for page in MUSE_TABS}
     first = client.post(url, headers=bearer, json={"title": "First", "lines": ["Intro"]}).json()["data"]
     payload = {"title": "W" * 80, "lines": [f"{n} " + "W" * 98 for n in range(6)]}
     published = client.post(url, headers=bearer, json=payload).json()["data"]
@@ -264,27 +271,57 @@ def test_briefing_validation_and_landscape_regions(dashboard, monkeypatch):
     assert client.post(url, headers=bearer, json=payload).json()["data"] == published
     assert client.get(url, headers=reader).json()["data"] == published
     assert frame("todo")[1].tobytes() == initial["todo"][1].tobytes()
+    assert frame("muse")[1].tobytes() == initial["muse"][1].tobytes()
 
     for widget in prefs.widgets:
         if widget.key == "briefing":
             widget.visible = True
     assert client.put(PATH + "/settings", headers=csrf, json=prefs.model_dump(mode="json")).status_code == 200
-    regions, image = frame("todo")
-    initial_regions, original = initial["todo"]
-    assert [{k: v for k, v in r.items() if k != "capability"} for r in regions] == [
-        {k: v for k, v in r.items() if k != "capability"} for r in initial_regions
-    ]
-    for bounds in ((0, 0, PANEL_X, HEIGHT), (PANEL_X, 0, WIDTH, 368), (0, PRAYER_Y, WIDTH, HEIGHT)):
-        assert image.crop(bounds).tobytes() == original.crop(bounds).tobytes()
-    assert image.crop((PANEL_X + 36, 585, WIDTH - 36, PRAYER_Y)).getextrema() == (0, 255)
-    for page in ("calendar", "pomodoro"):
-        assert frame(page)[1].tobytes() == initial[page][1].tobytes()
+    layout = layout_briefing(BriefingOutput.model_validate(published), True)
+    assert len(layout.pages) > 1
+    assert "".join(row.text.replace(" ", "") for rows in layout.pages for row in rows) == "".join(
+        line.replace(" ", "") for line in payload["lines"]
+    )
+    assert sum(row.starts_priority for rows in layout.pages for row in rows) == 6
+    assert all(row.baseline < PRAYER_Y - 76 for rows in layout.pages for row in rows)
+    deck = {page: frame(page) for page in MUSE_TABS}
+    muse_tab = tab_box(3, expanded=True)
+    badge = (muse_tab.x + 152, NAV_Y + 18, muse_tab.x + 186, HEIGHT - 1)
+    for page, (regions, image, _) in deck.items():
+        assert regions[:5] == [
+            *[{**asdict(tab_box(index, expanded=True)), "page": tab, "action": "navigate", "number": 1}
+              for index, tab in enumerate(MUSE_TABS)],
+            {**asdict(POWER_BOX), "action": "suspend"},
+        ]
+        for region in regions[5:]:
+            assert region["y"] + region["h"] <= PRAYER_Y
+        for a, b in combinations(regions, 2):
+            assert (
+                a["x"] + a["w"] <= b["x"] or b["x"] + b["w"] <= a["x"]
+                or a["y"] + a["h"] <= b["y"] or b["y"] + b["h"] <= a["y"]
+            )
+        assert image.crop(badge).tobytes() != initial[page][1].crop(badge).tobytes()
+        if page != "muse":
+            assert image.crop((0, 0, WIDTH, NAV_Y)).tobytes() == initial[page][1].crop((0, 0, WIDTH, NAV_Y)).tobytes()
+
+    inactive = deck["todo"][1].crop(badge)
+    active = deck["muse"][1].crop(badge)
+    assert all(abs(a + b - 255) <= 1 for a, b in zip(inactive.tobytes(), active.tobytes(), strict=True))
+    assert deck["muse"][2] == frame("muse", 2)[2] == 2
+    assert frame("muse", 999)[2] == len(layout.pages)
+    assert any(region.get("page") == "muse" and region["y"] < PRAYER_Y for region in deck["muse"][0])
+    assert any(region["x"] == LEFT and region["action"] == "complete" for region in deck["todo"][0])
+    assert len(frame("calendar", expanded=False)[0]) == 3
+
+    assert client.post(url, headers=bearer, json={"title": "Reduced", "lines": ["One priority"]}).status_code == 200
+    for page in MUSE_TABS:
+        assert frame(page)[1].crop(badge).tobytes() != deck[page][1].crop(badge).tobytes()
+    assert client.post(url, headers=bearer, json={"title": "No priorities", "lines": []}).status_code == 200
+    assert frame("todo")[1].crop(badge).tobytes() == initial["todo"][1].crop(badge).tobytes()
     assert client.delete(url, headers=csrf).status_code == 204
     assert client.get(url, headers=bearer).json() == {"data": None}
-    assert frame("todo")[1].tobytes() == original.tobytes()
-    assert len(client.get(PATH + "/audit", params={"action": "replace"}).json()["data"]) == 2
-    assert any(region["x"] == LEFT and region["action"] == "complete" for region in regions)
-
+    assert frame("muse")[1].tobytes() == initial["muse"][1].tobytes()
+    assert len(client.get(PATH + "/audit", params={"action": "replace"}).json()["data"]) == 4
 
 
 def test_upgrade_from_0003_preserves_entry_and_widget_order(tmp_path):

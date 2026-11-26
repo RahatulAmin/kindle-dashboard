@@ -123,7 +123,7 @@ Example task response:
 | `GET /api/v1/briefing` | `briefing:read` | 200, current briefing or `{"data":null}` |
 | `POST /api/v1/briefing` | `briefing:write` | 200, replaces the singleton briefing |
 
-POST requires a printable single-line title of 1 to 80 characters and an array of zero to six printable single-line strings. Each supplied line must be 1 to 100 characters after trimming. The response includes `updated_at`. An identical replacement leaves the timestamp and audit history as they were. A browser administrator can preview and clear the content under **Briefing**. Clearing is an administrator-only action. To render it on the landscape Todo page, enable **Briefing** in **Widgets** and enable Kindle sharing. The briefing sits below weather when populated and is off by default. Long text is truncated on Kindle. The web preview displays the full text.
+POST requires a printable single-line title of 1 to 80 characters and an array of zero to six printable single-line strings. Each supplied line must be 1 to 100 characters after trimming. The response includes `updated_at`. An identical replacement leaves the timestamp and audit history as they were. A browser administrator can preview and clear the content under **Briefing**. Clearing is an administrator-only action. To render it on the landscape **Muse** page, enable **Briefing** in **Widgets** and enable Kindle sharing. Briefing is off by default. The tab badge counts priorities and updates on every frame. Long text wraps over one or more pages. Install the [Muse landscape plugin ZIP](../kindle-koreader/trmnl-landscape-muse.zip) for the Muse and local suspend buttons. Older clients continue to receive the three-tab frame.
 
 ```bash
 api --json '{"title":"Muse Briefing","lines":["Review the agenda before 2 PM.","Workshop confirmation is due Friday."]}' \
@@ -141,6 +141,12 @@ unset DASHBOARD_TOKEN
   }
 }
 ```
+
+### Physical Kindle staging check
+
+Install the replacement ZIP in the existing KOReader plugin location and use the staging server and staging device credential. Keep a copy of the existing plugin and settings for rollback. On the Kindle, tap all four tabs, open a multipage Muse briefing, and leave it open through a refresh. Tap Todo to return to the last Todo page. Tap the on-screen power region, then press the physical power button to wake the device. Confirm the same page is visible and refresh resumes. Long-press to exit and confirm that the prior orientation is restored.
+
+The plugin requests the expanded Kindle frame with `ui=2`. The power region invokes KOReader's local [suspend mechanism](https://github.com/koreader/koreader/blob/master/frontend/ui/uimanager.lua). The server only delivers the image and touch region.
 
 ## Errors, retries, and audit
 

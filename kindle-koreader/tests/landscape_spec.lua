@@ -1,15 +1,18 @@
 local mode, pending_wifi, offline, fail_fetch, fail_render = 0, nil, false, false, false
 local requests, paints, layouts, completed_refreshes = {}, 0, 0, 0
 local scheduled = {}
+local suspend_calls = 0
 local width, height = 1024, 758
 local task = { x = 40, y = 115, w = 85, h = 81, action = "complete",
     task_id = 9, completed = true, capability = "test-capability" }
 local tabs = {}
-for index, page in ipairs({ "todo", "calendar", "pomodoro" }) do
-    tabs[index] = { x = (index-1)*341, y = 666, w = 341, h = 92,
+for index, page in ipairs({ "todo", "calendar", "pomodoro", "muse" }) do
+    tabs[index] = { x = (index-1)*230, y = 666, w = 230, h = 92,
         action = "navigate", page = page, number = 1 }
 end
 
+local power = { x = 920, y = 666, w = 104, h = 92, action = "suspend" }
+local next_page = { x = 780, y = 530, w = 200, h = 60, action = "navigate", number = 2 }
 local function stub(name, value)
     package.loaded[name] = value
 end
@@ -24,6 +27,7 @@ local screen = {
 }
 stub("device", { screen = screen, isTouchDevice = function() return true end,
     hasBattery = function() return true end,
+    canSuspend = function() return true end,
     getPowerDevice = function() return { getCapacity = function() return 71 end } end,
 })
 stub("ui/event", { new = function(_, name) return name end })
@@ -42,6 +46,7 @@ stub("ui/uimanager", {
         scheduled[callback] = true
     end,
     unschedule = function(_, callback) scheduled[callback] = nil end,
+    suspend = function() suspend_calls = suspend_calls + 1 end,
     close = function(_, widget) widget.closed = true end,
     setDirty = function() end,
     forceRePaint = function() paints = paints + 1 end,
@@ -57,11 +62,16 @@ stub("json", {
         assert(data.completed == true and data.capability == "test-capability")
         return "completion"
     end,
-    decode = function(page)
-        local regions = { tabs[1], tabs[2], tabs[3] }
-        if page == "todo" then regions[4] = task end
+    decode = function(body)
+        local page, number = body:match("page=(%a+)&number=(%d+)&ui=2$")
+        number = tonumber(number)
+        local regions = { tabs[1], tabs[2], tabs[3], tabs[4], power }
+        if page == "todo" then regions[6] = task end
+        if (page == "todo" or page == "muse") and number == 1 then
+            regions[#regions + 1] = setmetatable({ page = page }, { __index = next_page })
+        end
         return {
-            page = page, number = 1, width = width, height = height, filename = "landscape-abcd.png",
+            page = page, number = number, width = width, height = height, filename = "landscape-abcd.png",
             png = "test-fixture", regions = regions, refresh_rate = 30,
         }
     end,
@@ -75,7 +85,7 @@ stub("socket.http", { request = function(options)
     end
     assert(options.headers["percent-charged"] == "71" and options.headers["dashboard-wifi"] == "connected")
     if fail_fetch then return nil, "timeout" end
-    options.sink(assert(options.url:match("page=(%a+)")))
+    options.sink(assert(options.url:match("(page=%a+&number=%d+&ui=2)$")))
     return 1, 200
 end })
 
@@ -130,7 +140,7 @@ tap(27, 70, stale_widget)
 assert(#requests == 3)
 tap(222, 350)
 assert(p.landscape_session.frame.page == "calendar")
-tap(420, 350)
+tap(280, 350)
 assert(p.landscape_session.frame.page == "pomodoro")
 fail_fetch = true
 tap(22, 350)
@@ -146,6 +156,28 @@ session.refresh()
 assert(p.landscape_session.frame.page == "pomodoro")
 tap(22, 350)
 assert(p.landscape_session.frame.page == "todo")
+tap(420, 275)
+assert(session.frame.number == 2)
+tap(390, 350)
+assert(session.frame.page == "muse" and session.frame.number == 1)
+tap(420, 275)
+assert(session.frame.page == "muse" and session.frame.number == 2)
+scheduled[session.refresh] = nil
+session.refresh()
+assert(session.frame.page == "muse" and session.frame.number == 2)
+local before_power = #requests
+tap(460, 333)
+tap(511, 378)
+assert(suspend_calls == 1 and #requests == before_power)
+p:onSuspend() -- KOReader's suspend lifecycle marks the dashboard asleep.
+assert(not scheduled[session.refresh] and session.suspended)
+p:onResume() -- Simulated hardware wake delivers KOReader's Resume.
+assert(scheduled[session.refresh] and not session.suspended)
+scheduled[session.refresh] = nil
+session.refresh()
+assert(session.frame.page == "muse" and session.frame.number == 2)
+tap(22, 350)
+assert(session.frame.page == "todo" and session.frame.number == 2)
 offline = true
 tap(27, 70)
 local before = #requests

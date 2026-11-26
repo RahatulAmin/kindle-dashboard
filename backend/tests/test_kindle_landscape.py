@@ -196,7 +196,7 @@ def test_privacy_controls_empty_and_portrait_compatibility(dashboard):
 
 def test_package_contents_exclude_settings_and_credentials():
     plugin = ROOT / "kindle-koreader"
-    with ZipFile(plugin / "trmnl-landscape-phase3a.zip") as archive:
+    with ZipFile(plugin / "trmnl-landscape-muse.zip") as archive:
         assert archive.testzip() is None
         assert {Path(name).name for name in archive.namelist()} == {
             "main.lua", "_meta.lua", "landscape.lua", "LICENSE",
@@ -213,7 +213,7 @@ def test_lua_interaction_harness(tmp_path, monkeypatch):
 
     monkeypatch.chdir(ROOT)
     script = ROOT / "kindle-koreader/tests/landscape_spec.lua"
-    with ZipFile(ROOT / "kindle-koreader/trmnl-landscape-phase3a.zip") as archive:
+    with ZipFile(ROOT / "kindle-koreader/trmnl-landscape-muse.zip") as archive:
         archive.extract("trmnl.koplugin/main.lua", tmp_path)
     packaged = tmp_path / "trmnl.koplugin/main.lua"
     runner = tmp_path / "test.lua"

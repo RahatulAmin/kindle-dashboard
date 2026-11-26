@@ -4,7 +4,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "kindle-koreader"
 UPSTREAM = PLUGIN / "upstream/trmnl.koplugin"
-OUTPUT = PLUGIN / "trmnl-landscape-phase3a.zip"
+OUTPUT = PLUGIN / "trmnl-landscape-muse.zip"
 
 
 def replace_once(source, old, new):

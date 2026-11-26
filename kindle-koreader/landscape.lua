@@ -14,7 +14,7 @@ local Screen = Device.screen
 local PREFIX = "/api/kindle/landscape"
 local WIDTH, HEIGHT = 1024, 758
 local INTERVAL = 30
-local pages = { todo = true, calendar = true, pomodoro = true }
+local pages = { todo = true, calendar = true, pomodoro = true, muse = true }
 
 local function privateBase(url)
     if type(url) ~= "string" then return nil end
@@ -85,7 +85,7 @@ local function decodeFrame(body, page)
         not validNumber(frame.number, 1, 2147483647) or frame.width ~= WIDTH or frame.height ~= HEIGHT or
         frame.refresh_rate ~= INTERVAL or type(frame.filename) ~= "string" or
         not frame.filename:match("^landscape%-%x+%.png$") or type(frame.png) ~= "string" or
-        type(frame.regions) ~= "table" or #frame.regions < 3 or #frame.regions > 11 then
+        type(frame.regions) ~= "table" or #frame.regions < 3 or #frame.regions > 13 then
         return nil
     end
     for _, region in ipairs(frame.regions) do
@@ -94,6 +94,8 @@ local function decodeFrame(body, page)
             not validNumber(region.h, 1, HEIGHT - region.y) then return nil end
         if region.action == "navigate" then
             if not pages[region.page] or not validNumber(region.number, 1, 2147483647) then return nil end
+        elseif region.action == "suspend" then
+            if region.x ~= 920 or region.y ~= 666 or region.w ~= 104 or region.h ~= 92 then return nil end
         elseif region.action == "complete" then
             if page ~= "todo" or not validNumber(region.task_id, 1, 9007199254740991) or
                 type(region.completed) ~= "boolean" or type(region.capability) ~= "string" then return nil end
@@ -164,7 +166,7 @@ local function fetch(plugin, session, page, number, change)
                 -- The last successfully displayed image and regions remain paired.
                 if status ~= 204 then return end
             end
-            local status, body = request(session, "GET", "/frame?page=" .. page .. "&number=" .. number)
+            local status, body = request(session, "GET", "/frame?page=" .. page .. "&number=" .. number .. "&ui=2")
             local frame = status == 200 and decodeFrame(body, page)
             if not frame then return end
             if session.rotation == nil then
@@ -174,14 +176,24 @@ local function fetch(plugin, session, page, number, change)
                 rotate(plugin, Screen.DEVICE_ROTATED_COUNTER_CLOCKWISE)
             end
             local function handleTap(widget, gesture)
-                if session.frame ~= frame or session.widget ~= widget or not gesture or not gesture.pos or
+                if session.suspended or session.frame ~= frame or session.widget ~= widget or
+                    not gesture or not gesture.pos or
                     Screen:getRotationMode() ~= session.display_rotation or
                     Screen:getWidth() ~= widget.dimen.w or Screen:getHeight() ~= widget.dimen.h then return end
                 local region = Landscape.hit(frame, widget.dimen, gesture.pos.x, gesture.pos.y)
                 if not region then return end
                 if region.action == "navigate" then
-                    if region.page ~= frame.page or region.number ~= frame.number then
-                        fetch(plugin, session, region.page, region.number)
+                    local target_number = region.number
+                    if frame.page == "muse" and region.page == "todo" then
+                        target_number = session.todo_number or target_number
+                    end
+                    if region.page ~= frame.page or target_number ~= frame.number then
+                        fetch(plugin, session, region.page, target_number)
+                    end
+                elseif region.action == "suspend" then
+                    if not session.suspend_requested and Device:canSuspend() then
+                        session.suspend_requested = true
+                        UIManager:suspend()
                     end
                 else
                     fetch(plugin, session, frame.page, frame.number, region)
@@ -196,6 +208,7 @@ local function fetch(plugin, session, page, number, change)
                 UIManager:forceRePaint()
                 if UIManager.waitForVSync then UIManager:waitForVSync() end
                 session.frame = frame
+                if frame.page == "todo" then session.todo_number = frame.number end
                 session.display_rotation = Screen:getRotationMode()
                 frame.png = nil
             end
@@ -273,6 +286,7 @@ function Landscape.attach(plugin)
         local session = self.landscape_session
         if not session then return onResume(self) end
         session.suspended = false
+        session.suspend_requested = nil
         schedule(session)
     end
 
