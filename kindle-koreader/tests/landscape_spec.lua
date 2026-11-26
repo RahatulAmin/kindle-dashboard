@@ -1,7 +1,12 @@
 local mode, pending_wifi, offline, fail_fetch, fail_render = 0, nil, false, false, false
 local requests, paints, layouts, completed_refreshes = {}, 0, 0, 0
-local scheduled = {}
-local suspend_calls = 0
+local scheduled, next_ticks, logs = {}, {}, {}
+local suspend_calls, fail_suspend = 0, false
+local function runNextTick()
+    local callback = table.remove(next_ticks, 1)
+    assert(callback)
+    callback()
+end
 local width, height = 1024, 758
 local task = { x = 40, y = 115, w = 85, h = 81, action = "complete",
     task_id = 9, completed = true, capability = "test-capability" }
@@ -42,11 +47,15 @@ stub("ui/network/manager", {
 })
 stub("ui/uimanager", {
     scheduleIn = function(_, seconds, callback)
-        assert(seconds == 30 and not scheduled[callback])
-        scheduled[callback] = true
+        assert((seconds == 30 or seconds == 8) and not scheduled[callback])
+        scheduled[callback] = seconds
     end,
     unschedule = function(_, callback) scheduled[callback] = nil end,
-    suspend = function() suspend_calls = suspend_calls + 1 end,
+    nextTick = function(_, callback) next_ticks[#next_ticks + 1] = callback end,
+    suspend = function()
+        suspend_calls = suspend_calls + 1
+        if fail_suspend then error("test suspend failure") end
+    end,
     close = function(_, widget) widget.closed = true end,
     setDirty = function() end,
     forceRePaint = function() paints = paints + 1 end,
@@ -54,7 +63,13 @@ stub("ui/uimanager", {
 })
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
 stub("ltn12", { source = { string = function(body) return function() return body end end } })
-stub("logger", { warn = function() end })
+local function log(...)
+    local fields = { ... }
+    for index, value in ipairs(fields) do fields[index] = tostring(value) end
+    logs[#logs+1] = table.concat(fields, " ")
+end
+stub("logger", { info = log, warn = log })
+stub("version", { getCurrentRevision = function() return "fixture-version" end })
 local png = "\137PNG\r\n\26\n\0\0\0\13IHDR\0\0\4\0\0\0\2\246"
 stub("mime", { unb64 = function() return png end })
 stub("json", {
@@ -102,7 +117,7 @@ local prototype = {
         if self.image_widget then self.image_widget.closed = true end
         self.image_widget = {
             dimen = { x = 0, y = 0, w = screenWidth(), h = screenHeight() },
-            tap = interaction.tap, exit = interaction.close,
+            tap = interaction.tap, exit = interaction.close, lifecycle = interaction.lifecycle,
         }
         return true
     end,
@@ -166,13 +181,24 @@ scheduled[session.refresh] = nil
 session.refresh()
 assert(session.frame.page == "muse" and session.frame.number == 2)
 local before_power = #requests
+fail_suspend = true
+tap(460, 333)
+assert(suspend_calls == 1 and not session.suspend_requested and scheduled[session.refresh] == 30)
+fail_suspend = false
 tap(460, 333)
 tap(511, 378)
-assert(suspend_calls == 1 and #requests == before_power)
-p:onSuspend() -- KOReader's suspend lifecycle marks the dashboard asleep.
-assert(not scheduled[session.refresh] and session.suspended)
-p:onResume() -- Simulated hardware wake delivers KOReader's Resume.
-assert(scheduled[session.refresh] and not session.suspended)
+assert(suspend_calls == 2 and #requests == before_power and scheduled[session.suspend_timeout] == 8)
+assert(not scheduled[session.refresh])
+session.suspend_timeout() -- No lifecycle event, so the control must become tappable again.
+assert(not session.suspend_requested and scheduled[session.refresh] == 30)
+tap(511, 378)
+assert(suspend_calls == 3 and session.suspend_requested)
+p.image_widget.lifecycle(p.image_widget, true)
+p:onSuspend() -- Receiving the same event through both KOReader paths is safe.
+assert(not scheduled[session.refresh] and session.suspended and not scheduled[session.suspend_timeout])
+p.image_widget.lifecycle(p.image_widget, false)
+p:onResume()
+assert(scheduled[session.refresh] == 30 and not session.suspended)
 scheduled[session.refresh] = nil
 session.refresh()
 assert(session.frame.page == "muse" and session.frame.number == 2)
@@ -191,10 +217,24 @@ callback() -- Late callback after suspension must have no effect.
 assert(#requests == before)
 p:onResume()
 assert(scheduled[session.refresh])
-p.image_widget.exit()
+local current_widget = p.image_widget
+stale_widget.exit(stale_widget, { ges = "hold" })
+assert(#next_ticks == 0 and p.landscape_session == session)
+current_widget.exit(current_widget, { ges = "hold_release" })
+current_widget.exit(current_widget, { ges = "hold" })
+assert(#next_ticks == 1 and p.landscape_session == session)
+runNextTick()
 assert(completed_refreshes == paints)
 assert(mode == 0 and layouts == 2 and not p.landscape_session and not p.image_widget)
 assert(not scheduled[session.refresh])
+local captured = table.concat(logs, "\n")
+for _, message in ipairs({
+    "fixture-version", "power button tapped", "requesting UIManager suspend", "suspend request rejected",
+    "no Suspend event", "Suspend event image widget", "Resume event image widget",
+    "long-press event hold_release", "orientation restored 0",
+}) do
+    assert(captured:find(message, 1, true), message)
+end
 
 local invalid = plugin("http://example.com")
 invalid:startLandscape()

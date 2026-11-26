@@ -31,9 +31,9 @@ def patched_main():
         image_bb = RenderImage:renderImageFile(image_path, true, screen_width, screen_height)
     end""")
     source = replace_once(source, "self.image_widget.onGestureClose = function()",
-                          """self.image_widget.onGestureClose = function()
+                          """self.image_widget.onGestureClose = function(widget, _, gesture)
         if interaction then
-            interaction.close()
+            interaction.close(widget, gesture)
             return true
         end""")
     source = replace_once(source, '        if self.settings.close_gesture == "hold" then',
@@ -42,7 +42,12 @@ def patched_main():
                 interaction.tap(widget, gesture)
                 return true
             end
-            self.image_widget.ges_events = { GestureClose = anywhere("hold"), LandscapeTap = anywhere("tap") }
+            self.image_widget.ges_events = {
+                GestureClose = { anywhere("hold")[1], anywhere("hold_release")[1] },
+                LandscapeTap = anywhere("tap"),
+            }
+            self.image_widget.onSuspend = function(widget) interaction.lifecycle(widget, true) end
+            self.image_widget.onResume = function(widget) interaction.lifecycle(widget, false) end
         elseif self.settings.close_gesture == "hold" then''')
     source = replace_once(source, "    if Device:hasKeys() then\n        self.image_widget.key_events",
                           "    if not interaction and Device:hasKeys() then\n        self.image_widget.key_events")

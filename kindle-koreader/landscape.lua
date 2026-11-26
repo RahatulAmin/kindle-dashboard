@@ -14,6 +14,7 @@ local Screen = Device.screen
 local PREFIX = "/api/kindle/landscape"
 local WIDTH, HEIGHT = 1024, 758
 local INTERVAL = 30
+local SUSPEND_TIMEOUT = 8
 local pages = { todo = true, calendar = true, pomodoro = true, muse = true }
 
 local function privateBase(url)
@@ -137,27 +138,90 @@ local function rotate(plugin, target)
     UIManager:setDirty("all", "full")
 end
 
-local function stop(plugin)
+local function clearSuspendRequest(session)
+    session.suspend_requested = nil
+    UIManager:unschedule(session.suspend_timeout)
+end
+
+local function lifecycle(plugin, session, asleep, origin)
+    if plugin.landscape_session ~= session or session.closing then return end
+    logger.info("TRMNL landscape:", asleep and "Suspend event" or "Resume event", origin,
+        Screen:getRotationMode())
+    clearSuspendRequest(session)
+    if asleep then
+        session.suspended = true
+        session.pending = nil
+        UIManager:unschedule(session.refresh)
+    else
+        local repaint = session.suspended and session.widget
+        session.suspended = false
+        if repaint then UIManager:setDirty(session.widget, "full") end
+        schedule(session)
+    end
+end
+
+local function requestSuspend(session)
+    logger.info("TRMNL landscape: power button tapped")
+    if session.suspend_requested then
+        logger.info("TRMNL landscape: suspend already requested")
+        return
+    end
+    if type(Device.canSuspend) ~= "function" or not Device:canSuspend() or type(UIManager.suspend) ~= "function" then
+        logger.warn("TRMNL landscape: normal KOReader suspend unavailable")
+        return
+    end
+    session.suspend_requested = true
+    session.pending = nil
+    UIManager:unschedule(session.refresh)
+    UIManager:scheduleIn(SUSPEND_TIMEOUT, session.suspend_timeout)
+    logger.info("TRMNL landscape: requesting UIManager suspend")
+    local ok, result = pcall(UIManager.suspend, UIManager)
+    if not ok or result == false then
+        clearSuspendRequest(session)
+        if not session.suspended then schedule(session) end
+        logger.warn("TRMNL landscape: suspend request rejected")
+    end
+end
+
+local function stop(plugin, reason)
     local session = plugin.landscape_session
     if not session then return end
     plugin.landscape_session = nil
     UIManager:unschedule(session.refresh)
+    clearSuspendRequest(session)
     if session.widget then
-        UIManager:close(session.widget)
         plugin.image_widget = nil
+        if not pcall(UIManager.close, UIManager, session.widget) then
+            logger.warn("TRMNL landscape: dashboard widget close failed")
+        end
     end
-    if session.rotation ~= nil then rotate(plugin, session.rotation) end
+    if session.rotation ~= nil then
+        logger.info("TRMNL landscape: restoring orientation", reason, Screen:getRotationMode(), session.rotation)
+        local ok = pcall(rotate, plugin, session.rotation)
+        if ok and Screen:getRotationMode() == session.rotation then
+            logger.info("TRMNL landscape: orientation restored", Screen:getRotationMode())
+        else
+            logger.warn("TRMNL landscape: orientation restoration incomplete", Screen:getRotationMode())
+        end
+    end
 end
 
 local function fetch(plugin, session, page, number, change)
-    if plugin.landscape_session ~= session or session.suspended or session.pending then return end
+    if plugin.landscape_session ~= session or session.suspended or session.suspend_requested or
+        session.closing or session.pending then return end
+    if Device.screen_saver_mode then
+        schedule(session)
+        return
+    end
     UIManager:unschedule(session.refresh)
     local attempt = {}
     session.pending = attempt
     -- The Wi-Fi manager may never invoke its callback after a failed connection.
     UIManager:scheduleIn(INTERVAL, session.refresh)
     NetworkMgr:runWhenConnected(function()
-        if plugin.landscape_session ~= session or session.pending ~= attempt or session.suspended then return end
+        if plugin.landscape_session ~= session or session.pending ~= attempt or session.suspended or session.closing then
+            return
+        end
         local ok, reason = pcall(function()
             if change then
                 local status = request(session, "PUT", "/tasks/" .. string.format("%.0f", change.task_id) .. "/completion",
@@ -176,11 +240,17 @@ local function fetch(plugin, session, page, number, change)
                 rotate(plugin, Screen.DEVICE_ROTATED_COUNTER_CLOCKWISE)
             end
             local function handleTap(widget, gesture)
-                if session.suspended or session.frame ~= frame or session.widget ~= widget or
-                    not gesture or not gesture.pos or
-                    Screen:getRotationMode() ~= session.display_rotation or
-                    Screen:getWidth() ~= widget.dimen.w or Screen:getHeight() ~= widget.dimen.h then return end
+                if session.suspended or session.closing or session.frame ~= frame or session.widget ~= widget or
+                    not gesture or not gesture.pos then return end
                 local region = Landscape.hit(frame, widget.dimen, gesture.pos.x, gesture.pos.y)
+                if Screen:getRotationMode() ~= session.display_rotation or
+                    Screen:getWidth() ~= widget.dimen.w or Screen:getHeight() ~= widget.dimen.h then
+                    if region and region.action == "suspend" then
+                        logger.warn("TRMNL landscape: power tap ignored while screen geometry changed",
+                            Screen:getRotationMode(), session.display_rotation)
+                    end
+                    return
+                end
                 if not region then return end
                 if region.action == "navigate" then
                     local target_number = region.number
@@ -191,10 +261,7 @@ local function fetch(plugin, session, page, number, change)
                         fetch(plugin, session, region.page, target_number)
                     end
                 elseif region.action == "suspend" then
-                    if not session.suspend_requested and Device:canSuspend() then
-                        session.suspend_requested = true
-                        UIManager:suspend()
-                    end
+                    requestSuspend(session)
                 else
                     fetch(plugin, session, frame.page, frame.number, region)
                 end
@@ -202,7 +269,20 @@ local function fetch(plugin, session, page, number, change)
             if plugin:displayImage(nil, {
                 png = frame.png,
                 tap = handleTap,
-                close = function() stop(plugin) end,
+                close = function(widget, gesture)
+                    if session.widget ~= widget or plugin.landscape_session ~= session then return end
+                    logger.info("TRMNL landscape: long-press event", gesture and gesture.ges or "unknown")
+                    if session.closing then return end
+                    session.closing = true
+                    UIManager:unschedule(session.refresh)
+                    -- Let KOReader finish dispatching the gesture before closing and resizing.
+                    UIManager:nextTick(function()
+                        if plugin.landscape_session == session then stop(plugin, "long press") end
+                    end)
+                end,
+                lifecycle = function(widget, asleep)
+                    if session.widget == widget then lifecycle(plugin, session, asleep, "image widget") end
+                end,
             }) then
                 session.widget = plugin.image_widget
                 UIManager:forceRePaint()
@@ -220,7 +300,8 @@ local function fetch(plugin, session, page, number, change)
         end
         session.pending = nil
         NetworkMgr:afterWifiAction()
-        if plugin.landscape_session == session and not session.suspended then schedule(session) end
+        if plugin.landscape_session == session and not session.suspended and not session.suspend_requested
+            and not session.closing then schedule(session) end
     end)
 end
 
@@ -237,7 +318,15 @@ function Landscape.attach(plugin)
             self:showError("Interactive dashboard requires a touchscreen, a private IPv4 HTTP Base URL and an API key.")
             return
         end
+        local ok, revision = pcall(function() return require("version"):getCurrentRevision() end)
+        logger.info("TRMNL landscape: starting; KOReader revision", ok and revision or "unknown")
         local session = { base = base, token = token }
+        session.suspend_timeout = function()
+            if self.landscape_session ~= session or not session.suspend_requested then return end
+            clearSuspendRequest(session)
+            logger.warn("TRMNL landscape: no Suspend event; power button can be retried")
+            if not session.suspended and not session.closing then schedule(session) end
+        end
         session.refresh = function()
             session.pending = nil
             local frame = session.frame
@@ -257,7 +346,7 @@ function Landscape.attach(plugin)
         table.insert(menu_items.trmnl.sub_item_table, 2, {
             text = "Stop interactive landscape dashboard",
             show_func = function() return self.landscape_session ~= nil end,
-            callback = function() stop(self) end,
+            callback = function() stop(self, "menu") end,
         })
     end
 
@@ -274,24 +363,18 @@ function Landscape.attach(plugin)
 
     function plugin:onSuspend()
         local session = self.landscape_session
-        if session then
-            session.suspended = true
-            session.pending = nil
-            UIManager:unschedule(session.refresh)
-        end
+        if session then lifecycle(self, session, true, "plugin") end
         onSuspend(self)
     end
 
     function plugin:onResume()
         local session = self.landscape_session
         if not session then return onResume(self) end
-        session.suspended = false
-        session.suspend_requested = nil
-        schedule(session)
+        lifecycle(self, session, false, "plugin")
     end
 
     function plugin:onCloseWidget()
-        stop(self)
+        stop(self, "plugin close")
         onCloseWidget(self)
     end
 end

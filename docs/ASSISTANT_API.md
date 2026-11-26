@@ -148,6 +148,8 @@ Install the replacement ZIP in the existing KOReader plugin location and use the
 
 The plugin requests the expanded Kindle frame with `ui=2`. The power region invokes KOReader's local [suspend mechanism](https://github.com/koreader/koreader/blob/master/frontend/ui/uimanager.lua). The server only delivers the image and touch region.
 
+For a failed check, copy the lines containing `TRMNL landscape:` from `koreader/crash.log`. The start line identifies the running KOReader revision. A normal power tap logs a suspend request and a `Suspend event`; a physical wake logs a `Resume event`. If no suspend event arrives, the tap can be retried after eight seconds. A long press logs the gesture and the before/after orientation. These diagnostics omit the server address and credentials.
+
 ## Errors, retries, and audit
 
 Errors use `{"error":{"code":"http_409","message":"Entry version has changed. Retrieve the latest state and retry."}}`.

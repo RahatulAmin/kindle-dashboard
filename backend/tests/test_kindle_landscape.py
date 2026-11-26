@@ -202,7 +202,12 @@ def test_package_contents_exclude_settings_and_credentials():
             "main.lua", "_meta.lua", "landscape.lua", "LICENSE",
         }
         assert archive.read("trmnl.koplugin/landscape.lua") == (plugin / "landscape.lua").read_bytes()
-        assert b'landscape.lua").attach(TrmnlDisplay)' in archive.read("trmnl.koplugin/main.lua")
+        main = archive.read("trmnl.koplugin/main.lua")
+        assert b'landscape.lua").attach(TrmnlDisplay)' in main
+        assert b'anywhere("hold_release")' in main
+        assert b'interaction.close(widget, gesture)' in main
+        assert b'interaction.lifecycle(widget, true)' in main
+        assert b'interaction.lifecycle(widget, false)' in main
 
 
 def test_lua_interaction_harness(tmp_path, monkeypatch):
