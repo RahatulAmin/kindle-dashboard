@@ -8,7 +8,8 @@
 | 2.5B. Persistent native Kindle display | Detached full-screen refresh, power-key rehearsal, timed first trial, and supervised restoration | Initial physical display passed. Recovery fixes packaged for a controlled 120-second retest. |
 | 3A. Interactive landscape Kindle dashboard | KOReader/TRMNL landscape display, touch navigation, Todo completion synced with web admin, Calendar and Pomodoro previews, permanent NAS service and SQLite backups | Complete. Physically accepted on the Paperwhite 2 and released in v0.3.0. |
 | Salat times strip | Five daily prayer times on the landscape pages, prayer highlighting, web administration preferences, and AlAdhan monthly schedules cached in SQLite | Complete. Physically accepted on Kindle and released in v0.3.1. |
-| 3B. Calendar | Monthly navigation, current-day highlighting, deadline indicators and selected-day agenda | Planned |
+| 3B. External assistant integration | Scoped API tokens, task and deadline synchronization, audit history, and the Muse Briefing widget | Implemented on the feature branch. Physical acceptance and production approval pending. |
+| Calendar | Monthly navigation, current-day highlighting, deadline indicators and selected-day agenda | Planned |
 | 4. Persistent Pomodoro timer | Server-side state, focus/break defaults, Start/Pause/Resume/Reset/Skip, completed sessions, progress, one-second admin updates, restart recovery and authorized Kindle timer controls | Planned |
 | 5. Idle photo frame and photo library | Albums, uploads, e-ink processing, sequential/shuffled playback, configurable idle and rotation intervals and manual return. Suppress idle mode while timer is running or paused. | Planned |
 | 6. Device management, synchronization and integration | Enrollment, scoped credentials, revocation, per-device settings, synchronization and end-to-end mode behavior | Planned |

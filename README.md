@@ -102,6 +102,7 @@ Stop the project with `docker compose stop` from the same checkout. The app runs
 
 - [Environment and storage assessment](docs/ENVIRONMENT.md)
 - [Database migrations and backups](docs/DATABASE.md)
+- [External assistant API and Muse Briefing](docs/ASSISTANT_API.md)
 - [Security architecture](docs/SECURITY.md)
 - [Verification results](docs/VERIFICATION.md)
 - [Kindle compatibility and physical test procedure](KINDLE_COMPATIBILITY.md)

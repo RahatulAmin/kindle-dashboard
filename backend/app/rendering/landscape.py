@@ -7,6 +7,7 @@ import unicodedata
 from PIL import Image, ImageDraw
 
 from app.rendering.dashboard import fit_line
+from app.schemas.assistant import BriefingOutput
 from app.rendering.landscape_layout import (
     CLOCK_DIVIDER_Y, CLOCK_WIDTH, DATE_DIVIDER_Y, HEIGHT, LEFT, MAIN_CENTER, NAV_Y,
     PANEL_CENTER, PANEL_INSET, PANEL_TEXT_WIDTH, PANEL_X, PRAYER_Y, RIGHT,
@@ -66,8 +67,7 @@ def icon(draw, name, cx, cy, ink=INK):
         draw.line((cx, cy-5, cx, cy+2, cx+5, cy+2), fill=ink, width=2)
 
 
-def weather_icon(draw, condition: str | None, y: int):
-    x = PANEL_CENTER
+def weather_icon(draw, condition: str | None, y: int, x: int = PANEL_CENTER):
     name = (condition or "").lower()
     clear = "clear" in name
     partly = "partly" in name
@@ -120,7 +120,37 @@ def clock_size(draw, time):
     return size
 
 
-def information(draw, now, location, weather, compact=False):
+def briefing_panel(draw, weather, location, briefing):
+    left, right = PANEL_X + PANEL_INSET, WIDTH - PANEL_INSET
+    weather_icon(draw, weather.condition if weather.temperature is not None else None, 408, left + 35)
+    detail_x = left + 88
+    weather_width = right - detail_x
+    if weather.temperature is None:
+        label(draw, (detail_x, 411), "Weather unavailable", 20, "Medium", SECONDARY)
+    else:
+        temp = temperature(weather.temperature) + "C"
+        label(draw, (detail_x, 402), temp, 30, "Bold")
+        detail = weather.condition or "Unknown"
+        if weather.status == "stale":
+            detail += " · Last known"
+        label(draw, (detail_x, 420), fit_line(draw, detail, font(14), weather_width), 14)
+        if weather.high is not None and weather.low is not None:
+            label(draw, (detail_x, 437), f"H {temperature(weather.high)} / L {temperature(weather.low)}",
+                  14, "Medium", SECONDARY)
+    name = fit_line(draw, unicodedata.normalize("NFC", location), font(13), weather_width)
+    label(draw, (detail_x, 452), name, 13, fill=SECONDARY)
+    draw.line((left, 460, right, 460), fill=RULE)
+    title = fit_line(draw, unicodedata.normalize("NFC", briefing.title), font(19, "Bold"), PANEL_TEXT_WIDTH)
+    label(draw, (left, 480), title, 19, "Bold")
+    moment = datetime.fromisoformat(briefing.updated_at)
+    day, month, _, time, meridiem = date_clock(moment)
+    label(draw, (left, 496), f"Updated {month.title()} {day}, {time} {meridiem}", 13, fill=SECONDARY)
+    for index, line in enumerate(briefing.lines):
+        text = fit_line(draw, unicodedata.normalize("NFC", line), font(16), PANEL_TEXT_WIDTH)
+        label(draw, (left, 513 + 16 * index), text, 16)
+
+
+def information(draw, now, location, weather, compact=False, briefing=None):
     day, month, weekday, time, meridiem = date_clock(now)
     label(draw, (PANEL_CENTER, 145), time, clock_size(draw, time), "Bold", anchor="ms")
     label(draw, (PANEL_CENTER, 183), meridiem, 27, "Medium", anchor="ms")
@@ -128,6 +158,9 @@ def information(draw, now, location, weather, compact=False):
     label(draw, (PANEL_CENTER, 349), weekday, 27, "Medium", SECONDARY, "ms")
     for y in (CLOCK_DIVIDER_Y, DATE_DIVIDER_Y):
         draw.line((PANEL_X + PANEL_INSET, y, WIDTH - PANEL_INSET, y), fill=RULE)
+    if briefing is not None:
+        briefing_panel(draw, weather, location, briefing)
+        return
     icon_y = 412 if compact else WEATHER_ICON_Y
     temperature_y, condition_y, range_y, stale_y, location_y = (
         (499, 525, 550, 573, 591) if compact else (508, 543, 578, 605, 640)
@@ -208,7 +241,7 @@ def draw_prayer_strip(draw, result: PrayerDay):
 def render_landscape(page: Page, now: datetime, location: str, weather: Weather,
                      tasks: list[TaskRow] | None = None, page_number: int = 1,
                      page_count: int = 1, *, battery: int | None = None, wifi: bool = False,
-                     prayers: PrayerDay | None = None) -> bytes:
+                     prayers: PrayerDay | None = None, briefing: BriefingOutput | None = None) -> bytes:
     image = Image.new("L", (WIDTH, HEIGHT), 255)
     draw = ImageDraw.Draw(image)
     draw.line((PANEL_X, 0, PANEL_X, PRAYER_Y if prayers is not None else NAV_Y), fill=RULE)
@@ -230,7 +263,8 @@ def render_landscape(page: Page, now: datetime, location: str, weather: Weather,
             draw.rounded_rectangle((x-59, 426, x+59, 479), 4, outline=RULE)
             label(draw, (x, 461), text, 22, "Medium", SECONDARY, "ms")
         label(draw, (MAIN_CENTER, 530), "Preview · Timer controls disabled", 19, fill=SECONDARY, anchor="ms")
-    information(draw, now, location, weather, compact=prayers is not None)
+    information(draw, now, location, weather, compact=prayers is not None,
+                briefing=briefing if page == "todo" else None)
     device_indicators(draw, battery, wifi)
     if prayers is not None:
         draw_prayer_strip(draw, prayers)

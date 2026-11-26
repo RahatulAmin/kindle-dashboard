@@ -3,6 +3,7 @@ from alembic import context
 from app.core.config import Settings
 from app.db.database import Base, Database
 from app.models import dashboard  # Register model metadata for Alembic autogeneration.
+from app.models import assistant  # Register assistant models for Alembic autogeneration.
 
 config = context.config
 

@@ -41,7 +41,7 @@ def test_startup_migration_and_health(client, settings):
     assert response.json() == {"data": {"status": "ok", "database": "available"}}
     connection = sqlite3.connect(settings.sqlite_path)
     try:
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0003",)
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
         tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         )}

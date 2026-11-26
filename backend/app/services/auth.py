@@ -39,13 +39,15 @@ def csrf_token(token: str) -> str:
 
 
 class LoginLimiter:
-    def __init__(self):
+    def __init__(self, per_address: int = 5, total: int = 15):
+        self.per_address = per_address
+        self.total = total
         self.attempts: deque[tuple[float, str]] = deque()
         self.counts: Counter[str] = Counter()
         self.lock = Lock()
         self.hash_slots = BoundedSemaphore(2)
 
-    def check(self, address: str) -> None:
+    def check(self, address: str, message: str = "Too many login attempts. Try again in a minute.") -> None:
         with self.lock:
             now = monotonic()
             while self.attempts and self.attempts[0][0] <= now - 60:
@@ -53,9 +55,8 @@ class LoginLimiter:
                 self.counts[expired_address] -= 1
                 if not self.counts[expired_address]:
                     del self.counts[expired_address]
-            if self.counts[address] >= 5 or len(self.attempts) >= 15:
-                raise HTTPException(429, "Too many login attempts. Try again in a minute.",
-                                    headers={"Retry-After": "60"})
+            if self.counts[address] >= self.per_address or len(self.attempts) >= self.total:
+                raise HTTPException(429, message, headers={"Retry-After": "60", "Cache-Control": "no-store"})
             self.attempts.append((now, address))
             self.counts[address] += 1
 
@@ -76,7 +77,22 @@ def session_record(request: Request, db: Session, now: int) -> AdminSession | No
     return record if record and record.expires_at > now else None
 
 
+def supplies_bearer(request: Request) -> bool:
+    return any(value.split(maxsplit=1)[0].lower() == "bearer"
+               for value in request.headers.getlist("authorization") if value.strip())
+
+
+def deny_bearer(request: Request) -> None:
+    if supplies_bearer(request):
+        raise HTTPException(401, "This endpoint requires administrator sign-in.")
+
+
 def require_admin(request: Request, response: Response, db: DB) -> AdminSession:
+    deny_bearer(request)
+    return require_admin_session(request, response, db)
+
+
+def require_admin_session(request: Request, response: Response, db: DB) -> AdminSession:
     response.headers["Cache-Control"] = "no-store"
     record = session_record(request, db, int(time()))
     if not record:

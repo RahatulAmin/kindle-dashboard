@@ -9,7 +9,7 @@ export type EntryInput = {
   archived?: boolean;
 }
 export type Entry = EntryInput & { id: number; created_at: string; updated_at: string; days_until?: number }
-export type Widget = { key: 'datetime' | 'weather' | 'tasks' | 'deadlines' | 'pomodoro' | 'nas'; visible: boolean; limit: number }
+export type Widget = { key: 'datetime' | 'weather' | 'tasks' | 'deadlines' | 'pomodoro' | 'nas' | 'briefing'; visible: boolean; limit: number }
 export type Preferences = {
   kindle_data_enabled: boolean; dashboard_title: string; kindle_refresh_seconds: number;
   weather: { name: string; latitude: number; longitude: number; timezone: string };

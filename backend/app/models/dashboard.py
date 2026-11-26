@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, time
 
-from sqlalchemy import JSON, Date, ForeignKey, String, Text, Time
+from sqlalchemy import JSON, CheckConstraint, Date, ForeignKey, Index, String, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -41,18 +41,30 @@ class Entry:
     completed: Mapped[bool]
     kindle_visible: Mapped[bool]
     created_at: Mapped[str] = mapped_column(String(40), default=utc_timestamp)
-    updated_at: Mapped[str] = mapped_column(String(40), default=utc_timestamp, onupdate=utc_timestamp)
+    updated_at: Mapped[str] = mapped_column(String(40), default=utc_timestamp, onupdate=utc_timestamp, index=True)
+    source: Mapped[str | None] = mapped_column(String(80))
+    external_ref: Mapped[str | None] = mapped_column(String(160))
 
 
 class Task(Entry, Base):
     __tablename__ = "task"
+    __table_args__ = (
+        CheckConstraint("(source IS NULL) = (external_ref IS NULL)", name="ck_task_external_pair"),
+        Index("ix_task_external_identity", "source", "external_ref", unique=True),
+        Index("ix_task_external_ref", "external_ref"),
+    )
 
-    due_date: Mapped[date | None] = mapped_column(Date)
+    due_date: Mapped[date | None] = mapped_column(Date, index=True)
     position: Mapped[int]
 
 
 class Deadline(Entry, Base):
     __tablename__ = "deadline"
+    __table_args__ = (
+        CheckConstraint("(source IS NULL) = (external_ref IS NULL)", name="ck_deadline_external_pair"),
+        Index("ix_deadline_external_identity", "source", "external_ref", unique=True),
+        Index("ix_deadline_external_ref", "external_ref"),
+    )
 
     due_date: Mapped[date] = mapped_column(Date, index=True)
     due_time: Mapped[time | None] = mapped_column(Time)

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AdminShell, pages, type Page } from './layouts/AdminShell'
+import { AuditHistory, BriefingPage } from './pages/Assistant'
 import { Entries } from './pages/Entries'
 import { Overview } from './pages/Overview'
 import { PrayerTimes } from './pages/PrayerTimes'
@@ -27,6 +28,8 @@ function Content({ page, token }: { page: Page; token: string }) {
     case 'settings':
     case 'widgets': return <PreferencesPage key={page} widgets={page === 'widgets'} token={token} />
     case 'display': return <Display />
+    case 'briefing': return <BriefingPage token={token} />
+    case 'audit': return <AuditHistory />
     case 'prayer-times': return <PrayerTimes token={token} />
     default: return <>
       <h1 className="page-title">{pages[page]}</h1>

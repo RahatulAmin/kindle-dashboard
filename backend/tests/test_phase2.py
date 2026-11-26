@@ -238,5 +238,5 @@ def test_upgrade_from_baseline_preserves_database(settings, monkeypatch):
     with TestClient(create_app(settings)) as app:
         assert app.get("/api/v1/auth/session").json()["data"]["setup_required"]
     with sqlite3.connect(settings.sqlite_path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0003",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
         assert db.execute("SELECT contents FROM legacy").fetchone() == ("keep this",)

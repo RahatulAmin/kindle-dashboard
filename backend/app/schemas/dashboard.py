@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
 Priority = Literal["low", "normal", "high"]
-WidgetName = Literal["datetime", "weather", "tasks", "deadlines", "pomodoro", "nas"]
-WIDGETS = ("datetime", "weather", "tasks", "deadlines", "pomodoro", "nas")
+WidgetName = Literal["datetime", "weather", "tasks", "deadlines", "pomodoro", "nas", "briefing"]
+WIDGETS = ("datetime", "weather", "tasks", "deadlines", "pomodoro", "nas", "briefing")
 
 
 class InputModel(BaseModel):
@@ -45,6 +45,8 @@ class TaskOutput(TaskInput):
     id: int
     created_at: str
     updated_at: str
+    source: str | None = None
+    external_ref: str | None = None
 
 
 class DeadlineOutput(DeadlineInput):
@@ -52,6 +54,8 @@ class DeadlineOutput(DeadlineInput):
     id: int
     created_at: str
     updated_at: str
+    source: str | None = None
+    external_ref: str | None = None
     days_until: int
 
 
@@ -62,8 +66,8 @@ class Widget(InputModel):
 
     @model_validator(mode="after")
     def singleton_limit(self):
-        if self.key in {"datetime", "weather"} and self.limit != 1:
-            raise ValueError("Date/time and weather each display one item")
+        if self.key in {"datetime", "weather", "briefing"} and self.limit != 1:
+            raise ValueError("Date/time, weather, and briefing each display one item")
         return self
 
 
@@ -95,11 +99,14 @@ class Preferences(InputModel):
         Widget(key="deadlines", visible=True, limit=4),
         Widget(key="pomodoro", visible=False, limit=1),
         Widget(key="nas", visible=False, limit=1),
+        Widget(key="briefing", visible=False, limit=1),
     ])
 
     @field_validator("widgets")
     @classmethod
     def all_widgets_once(cls, values: list[Widget]) -> list[Widget]:
+        if len(values) == len(WIDGETS) - 1 and {widget.key for widget in values} == set(WIDGETS) - {"briefing"}:
+            return [*values, Widget(key="briefing", visible=False, limit=1)]
         if len(values) != len(WIDGETS) or {widget.key for widget in values} != set(WIDGETS):
             raise ValueError("Provide each widget exactly once")
         return values

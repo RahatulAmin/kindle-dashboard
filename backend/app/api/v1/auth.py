@@ -2,18 +2,18 @@ import secrets
 from time import time
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import StringConstraints
 from sqlalchemy import delete
 
 from app.models.dashboard import Admin, AdminSession
 from app.schemas.dashboard import InputModel
 from app.services.auth import (
-    COOKIE, DUMMY_HASH, Authenticated, DB, csrf_token, session_record,
+    COOKIE, DUMMY_HASH, Authenticated, DB, csrf_token, deny_bearer, session_record,
     token_digest, verify_password,
 )
 
-router = APIRouter(prefix="/api/v1/auth")
+router = APIRouter(prefix="/api/v1/auth", dependencies=[Depends(deny_bearer)])
 
 
 class Credentials(InputModel):

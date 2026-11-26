@@ -8,6 +8,8 @@ export const pages = {
   photos: 'Photo Library',
   display: 'Display',
   'prayer-times': 'Prayer Times',
+  briefing: 'Briefing',
+  audit: 'API Audit',
   settings: 'Settings',
   widgets: 'Widgets',
 } as const

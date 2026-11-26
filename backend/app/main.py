@@ -7,9 +7,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
+from app.api.assistant_limits import AssistantBodyLimit
 from app.api.kindle_diagnostic import router as diagnostic_router
 from app.api.kindle_display import router as display_router
 from app.api.kindle_landscape import router as landscape_router
+from app.api.v1.assistant import router as assistant_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.health import router as health_router
@@ -52,15 +54,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             handler.close()
 
     app = FastAPI(title="Kindle Dashboard", lifespan=lifespan)
+    app.add_middleware(AssistantBodyLimit)
     app.state.settings = settings
     app.state.landscape_signing_key = token_bytes(32)
     app.state.login_limiter = LoginLimiter()
+    app.state.assistant_limiter = LoginLimiter(per_address=120, total=1200)
     app.state.weather = WeatherCache()
     app.state.prayers = PrayerCache()
     app.state.kindle_diagnostic_last_press = None
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(dashboard_router)
+    app.include_router(assistant_router)
     app.include_router(prayer_router)
     app.include_router(kindle_router)
     app.include_router(display_router)

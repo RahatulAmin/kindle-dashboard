@@ -13,12 +13,14 @@ from pydantic import Field, StrictBool
 from sqlalchemy import func, select
 
 from app.api.kindle_display import require_device
+from app.models.assistant import Briefing
 from app.models.dashboard import Task
 from app.rendering.kindle import NO_CACHE
 from app.rendering.landscape import TaskRow, render_landscape
 from app.rendering.landscape_layout import (
     HEIGHT, TABS, WIDTH, Page, pagination_controls, row_box, tab_box, task_page_size,
 )
+from app.schemas.assistant import BriefingOutput
 from app.schemas.dashboard import InputModel
 from app.services.auth import DB
 from app.services.dashboard import preferences, task_query
@@ -101,6 +103,11 @@ def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page:
             })
         for target, hit, _, _ in pagination_controls(page_number, page_count, salat.enabled):
             regions.append({**asdict(hit), "action": "navigate", "page": page, "number": target})
+    briefing = None
+    if page == "todo" and any(widget.key == "briefing" and widget.visible for widget in config.widgets):
+        record = db.get(Briefing, 1)
+        if record is not None:
+            briefing = BriefingOutput.model_validate(record)
     db.rollback()
     if salat.enabled:
         background.add_task(request.app.state.prayers.refresh, request.app.state.database, salat, now)
@@ -108,7 +115,8 @@ def landscape_frame(request: Request, db: DB, background: BackgroundTasks, page:
     if any(widget.key == "weather" and widget.visible for widget in config.widgets):
         weather = request.app.state.weather.get(config.weather)
     png = render_landscape(page, now, config.weather.name, weather, tasks,
-                           page_number, page_count, battery=battery, wifi=wifi == "connected", prayers=prayers)
+                           page_number, page_count, battery=battery, wifi=wifi == "connected",
+                           prayers=prayers, briefing=briefing)
     return JSONResponse({
         "filename": f"landscape-{frame_id}.png", "width": WIDTH, "height": HEIGHT,
         "refresh_rate": REFRESH_SECONDS, "page": page, "number": page_number,

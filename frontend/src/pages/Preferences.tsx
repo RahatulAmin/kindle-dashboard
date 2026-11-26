@@ -3,7 +3,7 @@ import { api, errorMessage, useResource, type Preferences, type Widget } from '.
 
 const widgetNames: Record<Widget['key'], string> = {
   datetime: 'Date and time', weather: 'Weather', tasks: 'Tasks', deadlines: 'Deadlines',
-  pomodoro: 'Pomodoro (planned)', nas: 'NAS status (planned)',
+  pomodoro: 'Pomodoro (planned)', nas: 'NAS status (planned)', briefing: 'Briefing',
 }
 
 function GeneralForm({ initial, save, busy }: {
@@ -68,12 +68,12 @@ function WidgetForm({ initial, save, busy }: {
       event.preventDefault()
       void save({ ...initial, widgets })
     }}>
-      <p className="text-slate-700">Widgets appear in this order. Tasks and deadlines share the available lines on the Kindle.</p>
+      <p className="text-slate-700">The portrait dashboard follows this order. Briefing sits below weather on landscape Todo.</p>
       <ol className="divide-y divide-slate-200">
         {widgets.map((widget, index) => <li key={widget.key} className="grid gap-3 py-4 sm:grid-cols-[1fr_8rem_auto]">
           <label className="self-center"><input type="checkbox" checked={widget.visible} onChange={event => change(widget.key, { visible: event.target.checked })} /> {widgetNames[widget.key]}</label>
           <label>{widget.key === 'tasks' || widget.key === 'deadlines' ? 'Item limit' : 'Display limit'}
-            <input className="field" type="number" min="1" max={widget.key === 'datetime' || widget.key === 'weather' ? '1' : '12'} required value={widget.limit || ''} onChange={event => change(widget.key, { limit: Number(event.target.value) })} />
+            <input className="field" type="number" min="1" max={['datetime', 'weather', 'briefing'].includes(widget.key) ? '1' : '12'} required value={widget.limit || ''} onChange={event => change(widget.key, { limit: Number(event.target.value) })} />
           </label>
           <div className="flex items-end gap-2">
             <button type="button" className="action" aria-label={'Move ' + widgetNames[widget.key] + ' up'} disabled={index === 0} onClick={() => move(index, -1)}>Up</button>

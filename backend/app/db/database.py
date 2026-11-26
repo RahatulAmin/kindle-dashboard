@@ -17,7 +17,7 @@ class Database:
         self.path = path
         self.engine = create_engine(
             URL.create("sqlite+pysqlite", database=str(path)),
-            connect_args={"timeout": 5},
+            connect_args={"timeout": 5}, hide_parameters=True,
         )
         self.sessions = sessionmaker(self.engine, expire_on_commit=False)
         event.listen(self.engine, "connect", self.enable_foreign_keys)
