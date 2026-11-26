@@ -10,6 +10,7 @@ local socketutil = require("socketutil")
 local logger = require("logger")
 
 local Landscape = {}
+local Sleep
 local Screen = Device.screen
 local PREFIX = "/api/kindle/landscape"
 local WIDTH, HEIGHT = 1024, 758
@@ -143,18 +144,39 @@ local function clearSuspendRequest(session)
     UIManager:unschedule(session.suspend_timeout)
 end
 
+local function finishSleep(session, defer_close)
+    local state = session.sleep
+    if not state then return end
+    session.sleep = nil
+    -- Kindle's native afterResume reads the light state immediately after its Resume broadcast.
+    Sleep.restoreLight(state)
+    if defer_close then
+        UIManager:nextTick(function() Sleep.closeScreen(state) end)
+    else
+        Sleep.closeScreen(state)
+    end
+end
+
 local function lifecycle(plugin, session, asleep, origin)
     if plugin.landscape_session ~= session or session.closing then return end
     logger.info("TRMNL landscape:", asleep and "Suspend event" or "Resume event", origin,
         Screen:getRotationMode())
     clearSuspendRequest(session)
     if asleep then
+        local state = not session.suspended and session.sleep
         session.suspended = true
+        if state then
+            -- Native screensaver setup can place another widget over the dashboard or rotate it.
+            UIManager:nextTick(function()
+                if session.suspended and session.sleep == state then Sleep.showScreen(state) end
+            end)
+        end
         session.pending = nil
         UIManager:unschedule(session.refresh)
     else
         local repaint = session.suspended and session.widget
         session.suspended = false
+        finishSleep(session, true)
         if repaint then UIManager:setDirty(session.widget, "full") end
         schedule(session)
     end
@@ -173,11 +195,13 @@ local function requestSuspend(session)
     session.suspend_requested = true
     session.pending = nil
     UIManager:unschedule(session.refresh)
+    session.sleep = Sleep.prepare(session.sleep_image)
     UIManager:scheduleIn(SUSPEND_TIMEOUT, session.suspend_timeout)
     logger.info("TRMNL landscape: requesting UIManager suspend")
     local ok, result = pcall(UIManager.suspend, UIManager)
     if not ok or result == false then
         clearSuspendRequest(session)
+        finishSleep(session)
         if not session.suspended then schedule(session) end
         logger.warn("TRMNL landscape: suspend request rejected")
     end
@@ -189,6 +213,7 @@ local function stop(plugin, reason)
     plugin.landscape_session = nil
     UIManager:unschedule(session.refresh)
     clearSuspendRequest(session)
+    finishSleep(session)
     if session.widget then
         plugin.image_widget = nil
         if not pcall(UIManager.close, UIManager, session.widget) then
@@ -306,6 +331,8 @@ local function fetch(plugin, session, page, number, change)
 end
 
 function Landscape.attach(plugin)
+    local plugin_dir = plugin:getPluginDir()
+    Sleep = dofile(plugin_dir .. "sleep.lua")
     local addToMainMenu = plugin.addToMainMenu
     local onSuspend, onResume, onCloseWidget = plugin.onSuspend, plugin.onResume, plugin.onCloseWidget
     local fetchAndDisplay, startAutoRefresh = plugin.fetchAndDisplay, plugin.startAutoRefresh
@@ -320,10 +347,11 @@ function Landscape.attach(plugin)
         end
         local ok, revision = pcall(function() return require("version"):getCurrentRevision() end)
         logger.info("TRMNL landscape: starting; KOReader revision", ok and revision or "unknown")
-        local session = { base = base, token = token }
+        local session = { base = base, token = token, sleep_image = plugin_dir .. "sleep.png" }
         session.suspend_timeout = function()
             if self.landscape_session ~= session or not session.suspend_requested then return end
             clearSuspendRequest(session)
+            finishSleep(session)
             logger.warn("TRMNL landscape: no Suspend event; power button can be retried")
             if not session.suspended and not session.closing then schedule(session) end
         end

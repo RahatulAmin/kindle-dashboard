@@ -144,11 +144,11 @@ unset DASHBOARD_TOKEN
 
 ### Physical Kindle staging check
 
-Install the replacement ZIP in the existing KOReader plugin location and use the staging server and staging device credential. Keep a copy of the existing plugin and settings for rollback. On the Kindle, tap all four tabs, open a multipage Muse briefing, and leave it open through a refresh. Tap Todo to return to the last Todo page. Tap the on-screen power region, then press the physical power button to wake the device. Confirm the same page is visible and refresh resumes. Long-press to exit and confirm that the prior orientation is restored.
+Install the replacement ZIP in the existing KOReader plugin location and use the staging server and staging device credential. Keep a copy of the existing plugin and settings for rollback. On the Kindle, tap all four tabs, open a multipage Muse briefing, and leave it open through a refresh. Tap Todo to return to the last Todo page. With the frontlight on, tap the on-screen power region. Confirm the moon and sleep message appear and the light turns fully off. Press the physical power button and confirm the same page returns, the original brightness is restored, and refresh resumes. Repeat with the frontlight initially off. To compare native sleep independently, use KOReader's own Sleep action outside the dashboard. Long-press to exit and confirm that the prior orientation is restored.
 
 The plugin requests the expanded Kindle frame with `ui=2`. The power region invokes KOReader's local [suspend mechanism](https://github.com/koreader/koreader/blob/master/frontend/ui/uimanager.lua). The server only delivers the image and touch region.
 
-For a failed check, copy the lines containing `TRMNL landscape:` from `koreader/crash.log`. The start line identifies the running KOReader revision. A normal power tap logs a suspend request and a `Suspend event`; a physical wake logs a `Resume event`. If no suspend event arrives, the tap can be retried after eight seconds. A long press logs the gesture and the before/after orientation. These diagnostics omit the server address and credentials.
+For a failed check, copy the lines containing `TRMNL landscape:` from `koreader/crash.log`. The start line identifies the running KOReader revision. A normal power tap logs a suspend request and a `Suspend event`; a physical wake logs a `Resume event`. If no suspend event arrives, the dashboard and prior frontlight state return after eight seconds and the tap can be retried. A long press logs the gesture and the before/after orientation. These diagnostics omit the server address and credentials.
 
 ## Errors, retries, and audit
 

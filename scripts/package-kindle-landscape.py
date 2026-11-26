@@ -1,10 +1,13 @@
+from io import BytesIO
 from pathlib import Path
+from sys import path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "kindle-koreader"
 UPSTREAM = PLUGIN / "upstream/trmnl.koplugin"
 OUTPUT = PLUGIN / "trmnl-landscape-muse.zip"
+path.insert(0, str(ROOT / "backend"))
 
 
 def replace_once(source, old, new):
@@ -69,11 +72,28 @@ dofile(TrmnlDisplay:getPluginDir() .. "landscape.lua").attach(TrmnlDisplay)
 return TrmnlDisplay''')
 
 
+def sleep_image():
+    from PIL import Image, ImageDraw
+    from app.rendering.typography import font
+
+    image = Image.new("L", (1024, 758), 255)
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((467, 227, 557, 317), fill=0)
+    draw.ellipse((493, 207, 579, 293), fill=255)
+    draw.text((512, 397), "Sleeping", font=font(61, "Bold"), fill=0, anchor="ms")
+    draw.text((512, 460), "Press the power button to wake", font=font(34), fill=0, anchor="ms")
+    output = BytesIO()
+    image.save(output, "PNG")
+    return output.getvalue()
+
+
 def main():
     files = {
         "main.lua": patched_main().encode(),
         "_meta.lua": (UPSTREAM / "_meta.lua").read_bytes(),
         "landscape.lua": (PLUGIN / "landscape.lua").read_bytes(),
+        "sleep.lua": (PLUGIN / "sleep.lua").read_bytes(),
+        "sleep.png": sleep_image(),
         "LICENSE": (PLUGIN / "upstream/LICENSE").read_bytes(),
     }
     with ZipFile(OUTPUT, "w", compression=ZIP_DEFLATED) as archive:

@@ -2,6 +2,15 @@ local mode, pending_wifi, offline, fail_fetch, fail_render = 0, nil, false, fals
 local requests, paints, layouts, completed_refreshes = {}, 0, 0, 0
 local scheduled, next_ticks, logs = {}, {}, {}
 local suspend_calls, fail_suspend = 0, false
+local light_on, brightness, topmost = true, 12, nil
+local light = {
+    getCapacity = function() return 71 end,
+    isFrontlightOn = function() return light_on end,
+    frontlightIntensity = function() return light_on and brightness or 0 end,
+    turnOffFrontlight = function() light_on = false end,
+    turnOnFrontlight = function() light_on = true end,
+    setIntensity = function(_, value) brightness = value end,
+}
 local function runNextTick()
     local callback = table.remove(next_ticks, 1)
     assert(callback)
@@ -33,8 +42,15 @@ local screen = {
 stub("device", { screen = screen, isTouchDevice = function() return true end,
     hasBattery = function() return true end,
     canSuspend = function() return true end,
-    getPowerDevice = function() return { getCapacity = function() return 71 end } end,
+    hasFrontlight = function() return true end,
+    getPowerDevice = function() return light end,
 })
+local constructor = { new = function(_, spec) return spec end }
+stub("ffi/blitbuffer", { COLOR_WHITE = 255 })
+stub("ui/widget/container/centercontainer", constructor)
+stub("ui/widget/container/framecontainer", constructor)
+stub("ui/geometry", constructor)
+stub("ui/widget/imagewidget", constructor)
 stub("ui/event", { new = function(_, name) return name end })
 stub("ui/network/manager", {
     runWhenConnected = function(_, callback)
@@ -53,10 +69,19 @@ stub("ui/uimanager", {
     unschedule = function(_, callback) scheduled[callback] = nil end,
     nextTick = function(_, callback) next_ticks[#next_ticks + 1] = callback end,
     suspend = function()
+        assert(topmost and topmost[1][1].file:match("sleep%.png$") and not light_on)
         suspend_calls = suspend_calls + 1
         if fail_suspend then error("test suspend failure") end
     end,
-    close = function(_, widget) widget.closed = true end,
+    getTopmostVisibleWidget = function() return topmost end,
+    show = function(_, widget)
+        assert(widget.background == 255 and widget.modal)
+        topmost = widget
+    end,
+    close = function(_, widget)
+        if topmost == widget then topmost = nil end
+        widget.closed = true
+    end,
     setDirty = function() end,
     forceRePaint = function() paints = paints + 1 end,
     waitForVSync = function() completed_refreshes = completed_refreshes + 1 end,
@@ -106,6 +131,7 @@ end })
 
 local landscape = dofile("kindle-koreader/landscape.lua")
 local prototype = {
+    getPluginDir = function() return "kindle-koreader/" end,
     addToMainMenu = function(_, menu) menu.trmnl = { sub_item_table = {} } end,
     onSuspend = function() end, onResume = function() end, onCloseWidget = function() end,
     fetchAndDisplay = function(self) self.portrait = true end,
@@ -184,24 +210,44 @@ local before_power = #requests
 fail_suspend = true
 tap(460, 333)
 assert(suspend_calls == 1 and not session.suspend_requested and scheduled[session.refresh] == 30)
+assert(light_on and brightness == 12 and not topmost and not session.sleep)
 fail_suspend = false
 tap(460, 333)
 tap(511, 378)
 assert(suspend_calls == 2 and #requests == before_power and scheduled[session.suspend_timeout] == 8)
-assert(not scheduled[session.refresh])
+assert(not scheduled[session.refresh] and not light_on and topmost)
 session.suspend_timeout() -- No lifecycle event, so the control must become tappable again.
 assert(not session.suspend_requested and scheduled[session.refresh] == 30)
+assert(light_on and brightness == 12 and not topmost and not session.sleep)
 tap(511, 378)
-assert(suspend_calls == 3 and session.suspend_requested)
+assert(suspend_calls == 3 and session.suspend_requested and not light_on)
+local original_sleep_screen = topmost
+mode = 0 -- The native screensaver may switch to portrait and place its own widget on top.
+topmost = { native = true }
 p.image_widget.lifecycle(p.image_widget, true)
 p:onSuspend() -- Receiving the same event through both KOReader paths is safe.
 assert(not scheduled[session.refresh] and session.suspended and not scheduled[session.suspend_timeout])
+runNextTick()
+assert(original_sleep_screen.closed and topmost[1].dimen.w == 379 and not light_on)
+mode = 3 -- KOReader restores the dashboard orientation before broadcasting Resume.
+brightness = 5 -- Verify the saved brightness is restored even if the native setting changed.
 p.image_widget.lifecycle(p.image_widget, false)
 p:onResume()
-assert(scheduled[session.refresh] == 30 and not session.suspended)
+assert(scheduled[session.refresh] == 30 and not session.suspended and light_on and brightness == 12)
+runNextTick()
+assert(not topmost and not session.sleep)
 scheduled[session.refresh] = nil
 session.refresh()
 assert(session.frame.page == "muse" and session.frame.number == 2)
+light_on = false
+tap(511, 378)
+assert(suspend_calls == 4 and session.suspend_requested and not light_on)
+p:onSuspend()
+runNextTick()
+light_on = true -- Simulate a firmware wake that turned on an originally off light.
+p:onResume()
+runNextTick()
+assert(not light_on and brightness == 12 and not topmost)
 tap(22, 350)
 assert(session.frame.page == "todo" and session.frame.number == 2)
 offline = true
@@ -232,6 +278,7 @@ for _, message in ipairs({
     "fixture-version", "power button tapped", "requesting UIManager suspend", "suspend request rejected",
     "no Suspend event", "Suspend event image widget", "Resume event image widget",
     "long-press event hold_release", "orientation restored 0",
+    "frontlight off for sleep", "frontlight state restored",
 }) do
     assert(captured:find(message, 1, true), message)
 end

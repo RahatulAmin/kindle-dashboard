@@ -199,9 +199,13 @@ def test_package_contents_exclude_settings_and_credentials():
     with ZipFile(plugin / "trmnl-landscape-muse.zip") as archive:
         assert archive.testzip() is None
         assert {Path(name).name for name in archive.namelist()} == {
-            "main.lua", "_meta.lua", "landscape.lua", "LICENSE",
+            "main.lua", "_meta.lua", "landscape.lua", "sleep.lua", "sleep.png", "LICENSE",
         }
         assert archive.read("trmnl.koplugin/landscape.lua") == (plugin / "landscape.lua").read_bytes()
+        assert archive.read("trmnl.koplugin/sleep.lua") == (plugin / "sleep.lua").read_bytes()
+        art = image(archive.read("trmnl.koplugin/sleep.png"))
+        assert art.size == (1024, 758) and art.mode == "L"
+        assert art.getpixel((0, 0)) == 255 and art.getextrema() == (0, 255)
         main = archive.read("trmnl.koplugin/main.lua")
         assert b'landscape.lua").attach(TrmnlDisplay)' in main
         assert b'anywhere("hold_release")' in main
