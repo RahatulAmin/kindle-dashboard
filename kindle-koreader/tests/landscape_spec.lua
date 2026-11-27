@@ -3,6 +3,7 @@ local requests, paints, layouts, completed_refreshes = {}, 0, 0, 0
 local scheduled, next_ticks, logs = {}, {}, {}
 local suspend_calls, fail_suspend = 0, false
 local light_on, brightness, topmost = true, 12, nil
+local stock_shows, client_shows = 0, 0
 local light = {
     getCapacity = function() return 71 end,
     isFrontlightOn = function() return light_on end,
@@ -39,16 +40,17 @@ local screen = {
     setRotationMode = function(_, target) mode = target end,
     getSize = function() return { w = screenWidth(), h = screenHeight() } end,
 }
-stub("device", { screen = screen, isTouchDevice = function() return true end,
+local device = { screen = screen, isTouchDevice = function() return true end,
     hasBattery = function() return true end,
     canSuspend = function() return true end,
     hasFrontlight = function() return true end,
     getPowerDevice = function() return light end,
-})
+}
+stub("device", device)
 local constructor = { new = function(_, spec) return spec end }
 stub("ffi/blitbuffer", { COLOR_WHITE = 255 })
 stub("ui/widget/container/centercontainer", constructor)
-stub("ui/widget/container/framecontainer", constructor)
+stub("ui/widget/screensaverwidget", constructor)
 stub("ui/geometry", constructor)
 stub("ui/widget/imagewidget", constructor)
 stub("ui/event", { new = function(_, name) return name end })
@@ -69,13 +71,12 @@ stub("ui/uimanager", {
     unschedule = function(_, callback) scheduled[callback] = nil end,
     nextTick = function(_, callback) next_ticks[#next_ticks + 1] = callback end,
     suspend = function()
-        assert(topmost and topmost[1][1].file:match("sleep%.png$") and not light_on)
         suspend_calls = suspend_calls + 1
         if fail_suspend then error("test suspend failure") end
     end,
-    getTopmostVisibleWidget = function() return topmost end,
     show = function(_, widget)
-        assert(widget.background == 255 and widget.modal)
+        assert(widget.background == 255 and widget.modal and widget.widget[1].file:match("sleep%.png$"))
+        client_shows = client_shows + 1
         topmost = widget
     end,
     close = function(_, widget)
@@ -86,6 +87,26 @@ stub("ui/uimanager", {
     forceRePaint = function() paints = paints + 1 end,
     waitForVSync = function() completed_refreshes = completed_refreshes + 1 end,
 })
+local screensaver = {
+    setup = function(self, event) self.event = event or "sleep" end,
+    show = function(self)
+        stock_shows = stock_shows + 1
+        self.screensaver_widget = { stock = true }
+        topmost = self.screensaver_widget
+        device.screen_saver_mode = true
+    end,
+    close = function(self)
+        if self.screensaver_widget then self:close_widget() end
+        return true
+    end,
+    close_widget = function(self)
+        package.loaded["ui/uimanager"]:close(self.screensaver_widget)
+        self.screensaver_widget = nil
+        device.screen_saver_mode = false
+    end,
+}
+local stock_setup, stock_show, stock_close = screensaver.setup, screensaver.show, screensaver.close
+stub("ui/screensaver", screensaver)
 stub("socketutil", { set_timeout = function() end, reset_timeout = function() end })
 stub("ltn12", { source = { string = function(body) return function() return body end end } })
 local function log(...)
@@ -215,39 +236,41 @@ fail_suspend = false
 tap(460, 333)
 tap(511, 378)
 assert(suspend_calls == 2 and #requests == before_power and scheduled[session.suspend_timeout] == 8)
-assert(not scheduled[session.refresh] and not light_on and topmost)
-session.suspend_timeout() -- No lifecycle event, so the control must become tappable again.
+assert(not scheduled[session.refresh] and light_on and not topmost)
+session.suspend_timeout()
 assert(not session.suspend_requested and scheduled[session.refresh] == 30)
 assert(light_on and brightness == 12 and not topmost and not session.sleep)
-tap(511, 378)
-assert(suspend_calls == 3 and session.suspend_requested and not light_on)
-local original_sleep_screen = topmost
-mode = 0 -- The native screensaver may switch to portrait and place its own widget on top.
-topmost = { native = true }
-p.image_widget.lifecycle(p.image_widget, true)
-p:onSuspend() -- Receiving the same event through both KOReader paths is safe.
-assert(not scheduled[session.refresh] and session.suspended and not scheduled[session.suspend_timeout])
-runNextTick()
-assert(original_sleep_screen.closed and topmost[1].dimen.w == 379 and not light_on)
-mode = 3 -- KOReader restores the dashboard orientation before broadcasting Resume.
-brightness = 5 -- Verify the saved brightness is restored even if the native setting changed.
-p.image_widget.lifecycle(p.image_widget, false)
-p:onResume()
-assert(scheduled[session.refresh] == 30 and not session.suspended and light_on and brightness == 12)
-runNextTick()
-assert(not topmost and not session.sleep)
+
+for _, entry in ipairs({ "screen", "physical", "physical", "screen" }) do
+    local shows_before = client_shows
+    local was_on = light_on
+    local prior_brightness = brightness
+    if entry == "screen" then tap(511, 378) end
+    -- Both entries converge on KOReader's native setup/show before Suspend.
+    screensaver:setup()
+    screensaver:show()
+    assert(screensaver.screensaver_widget == topmost and mode == 3)
+    assert(topmost.widget.dimen.w == 512 and topmost.widget.dimen.h == 379)
+    assert(not light_on and client_shows == shows_before + 1 and stock_shows == 0)
+    p.image_widget.lifecycle(p.image_widget, true)
+    p:onSuspend()
+    assert(not scheduled[session.refresh] and session.suspended and not scheduled[session.suspend_timeout])
+    assert(#next_ticks == 0 and #requests == before_power)
+    assert(screensaver:close()) -- The native wake path closes exactly the owned widget.
+    assert(not topmost and not device.screen_saver_mode)
+    if was_on then brightness = 5 else light_on = true end
+    p.image_widget.lifecycle(p.image_widget, false)
+    p:onResume()
+    assert(scheduled[session.refresh] == 30 and not session.suspended and light_on == was_on)
+    assert(brightness == prior_brightness)
+    runNextTick()
+    assert(not session.sleep and not topmost and mode == 3)
+    light_on = not light_on -- Cover both original light states for each button.
+end
+assert(suspend_calls == 4 and #requests == before_power)
 scheduled[session.refresh] = nil
 session.refresh()
 assert(session.frame.page == "muse" and session.frame.number == 2)
-light_on = false
-tap(511, 378)
-assert(suspend_calls == 4 and session.suspend_requested and not light_on)
-p:onSuspend()
-runNextTick()
-light_on = true -- Simulate a firmware wake that turned on an originally off light.
-p:onResume()
-runNextTick()
-assert(not light_on and brightness == 12 and not topmost)
 tap(22, 350)
 assert(session.frame.page == "todo" and session.frame.number == 2)
 offline = true
@@ -257,12 +280,16 @@ tap(27, 70)
 assert(#requests == before and pending_wifi)
 p:onSuspend()
 assert(not scheduled[session.refresh])
+runNextTick() -- Fallback for firmware paths that omit the native setup/show call.
+assert(topmost == screensaver.screensaver_widget and not light_on)
 local callback = pending_wifi
 pending_wifi = nil
 callback() -- Late callback after suspension must have no effect.
 assert(#requests == before)
 p:onResume()
 assert(scheduled[session.refresh])
+runNextTick()
+assert(not topmost)
 local current_widget = p.image_widget
 stale_widget.exit(stale_widget, { ges = "hold" })
 assert(#next_ticks == 0 and p.landscape_session == session)
@@ -273,12 +300,17 @@ runNextTick()
 assert(completed_refreshes == paints)
 assert(mode == 0 and layouts == 2 and not p.landscape_session and not p.image_widget)
 assert(not scheduled[session.refresh])
+assert(screensaver.setup == stock_setup and screensaver.show == stock_show and screensaver.close == stock_close)
+screensaver:setup()
+screensaver:show()
+assert(topmost.stock and stock_shows == 1)
+assert(screensaver:close() and not topmost)
 local captured = table.concat(logs, "\n")
 for _, message in ipairs({
     "fixture-version", "power button tapped", "requesting UIManager suspend", "suspend request rejected",
     "no Suspend event", "Suspend event image widget", "Resume event image widget",
     "long-press event hold_release", "orientation restored 0",
-    "frontlight off for sleep", "frontlight state restored",
+    "native moon screensaver shown 3", "frontlight off for sleep", "frontlight state restored",
 }) do
     assert(captured:find(message, 1, true), message)
 end

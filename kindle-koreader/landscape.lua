@@ -163,12 +163,14 @@ local function lifecycle(plugin, session, asleep, origin)
         Screen:getRotationMode())
     clearSuspendRequest(session)
     if asleep then
-        local state = not session.suspended and session.sleep
+        local needs_screen = not session.suspended and not session.sleep and session.widget
         session.suspended = true
-        if state then
-            -- Native screensaver setup can place another widget over the dashboard or rotate it.
+        if needs_screen then
+            -- Some device paths broadcast Suspend without calling Screensaver:show().
             UIManager:nextTick(function()
-                if session.suspended and session.sleep == state then Sleep.showScreen(state) end
+                if plugin.landscape_session == session and session.suspended and not session.sleep then
+                    Sleep.showScreen(session)
+                end
             end)
         end
         session.pending = nil
@@ -177,7 +179,12 @@ local function lifecycle(plugin, session, asleep, origin)
         local repaint = session.suspended and session.widget
         session.suspended = false
         finishSleep(session, true)
-        if repaint then UIManager:setDirty(session.widget, "full") end
+        if repaint then
+            if Screen:getRotationMode() ~= session.display_rotation then
+                rotate(plugin, session.display_rotation)
+            end
+            UIManager:setDirty(session.widget, "full")
+        end
         schedule(session)
     end
 end
@@ -195,7 +202,6 @@ local function requestSuspend(session)
     session.suspend_requested = true
     session.pending = nil
     UIManager:unschedule(session.refresh)
-    session.sleep = Sleep.prepare(session.sleep_image)
     UIManager:scheduleIn(SUSPEND_TIMEOUT, session.suspend_timeout)
     logger.info("TRMNL landscape: requesting UIManager suspend")
     local ok, result = pcall(UIManager.suspend, UIManager)
@@ -214,6 +220,7 @@ local function stop(plugin, reason)
     UIManager:unschedule(session.refresh)
     clearSuspendRequest(session)
     finishSleep(session)
+    session.uninstall_screensaver()
     if session.widget then
         plugin.image_widget = nil
         if not pcall(UIManager.close, UIManager, session.widget) then
@@ -362,6 +369,9 @@ function Landscape.attach(plugin)
         end
         self.portrait_generation = (self.portrait_generation or 0) + 1
         self.landscape_session = session
+        session.uninstall_screensaver = Sleep.install(session, function()
+            return self.landscape_session == session and session.widget ~= nil and not session.closing
+        end)
         fetch(self, session, "todo", 1)
     end
 

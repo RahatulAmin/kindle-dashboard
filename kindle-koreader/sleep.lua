@@ -1,63 +1,17 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
-local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local ImageWidget = require("ui/widget/imagewidget")
+local ScreenSaverWidget = require("ui/widget/screensaverwidget")
+local Screensaver = require("ui/screensaver")
 local UIManager = require("ui/uimanager")
 local logger = require("logger")
 
 local Sleep = {}
 local Screen = Device.screen
 
-function Sleep.closeScreen(state)
-    if not state.widget then return end
-    local widget = state.widget
-    state.widget = nil
-    if not pcall(UIManager.close, UIManager, widget, "full") then
-        logger.warn("TRMNL landscape: sleep screen close failed")
-    end
-end
-
-function Sleep.showScreen(state)
-    local w, h = Screen:getWidth(), Screen:getHeight()
-    if state.widget and state.width == w and state.height == h
-        and UIManager:getTopmostVisibleWidget() == state.widget then return end
-    Sleep.closeScreen(state)
-
-    local ok = pcall(function()
-        state.widget = FrameContainer:new{
-            modal = true,
-            covers_fullscreen = true,
-            background = Blitbuffer.COLOR_WHITE,
-            bordersize = 0,
-            padding = 0,
-            margin = 0,
-            CenterContainer:new{
-                dimen = Geom:new{ w = w, h = h },
-                ImageWidget:new{
-                    file = state.image,
-                    file_do_cache = false,
-                    width = w,
-                    height = h,
-                    scale_factor = 0,
-                },
-            },
-        }
-        state.width, state.height = w, h
-        UIManager:show(state.widget, "full")
-        UIManager:forceRePaint()
-        if UIManager.waitForVSync then UIManager:waitForVSync() end
-    end)
-    if not ok then
-        Sleep.closeScreen(state)
-        logger.warn("TRMNL landscape: sleep screen unavailable")
-    end
-end
-
-function Sleep.prepare(image)
-    local state = { image = image }
-    Sleep.showScreen(state)
+local function dimLight(state)
     local ok = pcall(function()
         if not Device:hasFrontlight() then return end
         local power = Device:getPowerDevice()
@@ -69,7 +23,6 @@ function Sleep.prepare(image)
         logger.info("TRMNL landscape: frontlight off for sleep")
     end)
     if not ok then logger.warn("TRMNL landscape: frontlight off could not be confirmed") end
-    return state
 end
 
 function Sleep.restoreLight(state)
@@ -89,6 +42,87 @@ function Sleep.restoreLight(state)
         logger.info("TRMNL landscape: frontlight state restored")
     end)
     if not ok then logger.warn("TRMNL landscape: frontlight restoration could not be confirmed") end
+end
+
+function Sleep.closeScreen(state)
+    if Screensaver.screensaver_widget ~= state.widget then return true end
+    local ok = type(Screensaver.close_widget) == "function" and pcall(Screensaver.close_widget, Screensaver)
+    if not ok then ok = pcall(UIManager.close, UIManager, state.widget, "full") end
+    if not ok then logger.warn("TRMNL landscape: native sleep screen close failed") end
+    return ok
+end
+
+function Sleep.showScreen(session)
+    if session.sleep then return true end
+    if Screensaver.screensaver_widget or Screensaver.screensaver_lock_widget then return false end
+    local state = {}
+    local ok = pcall(function()
+        if Screen:getRotationMode() ~= session.display_rotation then
+            Screen:setRotationMode(session.display_rotation)
+        end
+        local w, h = Screen:getWidth(), Screen:getHeight()
+        state.widget = ScreenSaverWidget:new{
+            modal = true,
+            covers_fullscreen = true,
+            background = Blitbuffer.COLOR_WHITE,
+            widget = CenterContainer:new{
+                dimen = Geom:new{ w = w, h = h },
+                ImageWidget:new{
+                    file = session.sleep_image,
+                    file_do_cache = false,
+                    width = w,
+                    height = h,
+                    scale_factor = 0,
+                },
+            },
+        }
+        session.sleep = state
+        Device.orig_rotation_mode = nil
+        Device.screen_saver_mode = true
+        Screensaver.screensaver_widget = state.widget
+        UIManager:show(state.widget, "full")
+        UIManager:forceRePaint()
+        if UIManager.waitForVSync then UIManager:waitForVSync() end
+        dimLight(state)
+        logger.info("TRMNL landscape: native moon screensaver shown", Screen:getRotationMode())
+    end)
+    if not ok then
+        if state.widget then Sleep.closeScreen(state) end
+        Sleep.restoreLight(state)
+        session.sleep = nil
+        logger.warn("TRMNL landscape: native moon screensaver unavailable")
+    end
+    return ok
+end
+
+function Sleep.install(session, active)
+    local setup, show, close = Screensaver.setup, Screensaver.show, Screensaver.close
+    local custom
+    local dashboardSetup = function(saver, event, ...)
+        custom = not event and active()
+        if custom then return end
+        return setup(saver, event, ...)
+    end
+    local dashboardShow = function(saver, ...)
+        if custom then
+            custom = nil
+            if active() and Sleep.showScreen(session) then return end
+            setup(saver)
+        end
+        return show(saver, ...)
+    end
+    local dashboardClose = function(saver, ...)
+        -- The physical button is sufficient to leave this dashboard screensaver.
+        if session.sleep and saver.screensaver_widget == session.sleep.widget
+            and Sleep.closeScreen(session.sleep) then return true end
+        return close(saver, ...)
+    end
+    Screensaver.setup, Screensaver.show, Screensaver.close = dashboardSetup, dashboardShow, dashboardClose
+    return function()
+        if Screensaver.setup == dashboardSetup then Screensaver.setup = setup end
+        if Screensaver.show == dashboardShow then Screensaver.show = show end
+        if Screensaver.close == dashboardClose then Screensaver.close = close end
+    end
 end
 
 return Sleep
